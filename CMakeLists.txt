@@ -179,16 +179,19 @@ set(APP_SOURCES
 
 # Component groups
 file(GLOB_RECURSE EDITOR_SOURCES    "editor/*.cpp")
-if(WIN32)
-    # On Windows, use stub implementations only
-    set(LSP_SOURCES
-        lsp/lsp_stubs_windows.cpp
-    )
+
+# Build real LSP on all platforms; only use the stub if you explicitly opt in
+option(NED_USE_LSP_STUBS "Use LSP stub implementation instead of real adapters" OFF)
+
+if(NED_USE_LSP_STUBS)
+  set(LSP_SOURCES
+    lsp/lsp_stubs_windows.cpp
+  )
 else()
-    # On Unix systems, use real LSP implementation (exclude Windows stubs)
-    file(GLOB_RECURSE LSP_SOURCES "lsp/*.cpp")
-    list(REMOVE_ITEM LSP_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/lsp/lsp_stubs_windows.cpp")
+  file(GLOB_RECURSE LSP_SOURCES "lsp/*.cpp")
+  list(REMOVE_ITEM LSP_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/lsp/lsp_stubs_windows.cpp")
 endif()
+
 file(GLOB_RECURSE AI_SOURCES        "ai/*.cpp")
 file(GLOB_RECURSE AI_MM_SOURCES     "ai/*.mm")
 file(GLOB_RECURSE FILES_SOURCES     "files/*.cpp")
@@ -274,6 +277,16 @@ add_executable(ned
   ${IMGUI_SOURCES}
   ${WINDOWS_RESOURCES}
 )
+
+if (WIN32)
+  add_custom_command(TARGET ned POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory
+            "$<TARGET_FILE_DIR:ned>/servers/luau-lsp/current/win-x64"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_SOURCE_DIR}/servers/luau-lsp/current/win-x64/luau-lsp.exe"
+            "$<TARGET_FILE_DIR:ned>/servers/luau-lsp/current/win-x64/luau-lsp.exe"
+  )
+endif()
 
 # ================
 # Embeddable Library
@@ -500,3 +513,6 @@ file(COPY
   ${CMAKE_CURRENT_SOURCE_DIR}/editor/queries 
   DESTINATION ${CMAKE_BINARY_DIR}
 )
+
+install(TARGETS ned RUNTIME DESTINATION .)
+install(DIRECTORY ${CMAKE_SOURCE_DIR}/servers/ DESTINATION servers)
