@@ -12,6 +12,7 @@ LSPManager::LSPManager() : activeAdapter(NONE)
 	pyrightAdapter = std::make_unique<LSPAdapterPyright>();
 	typescriptAdapter = std::make_unique<LSPAdapterTypescript>();
 	goAdapter = std::make_unique<LSPAdapterGo>(); // For Go
+	luauAdapter = std::make_unique<LSPAdapterLuau>(); // For Luau
 }
 
 LSPManager::~LSPManager() = default; // Relies on unique_ptr to clean up adapters
@@ -139,7 +140,32 @@ bool LSPManager::initialize(const std::string &path)
 			success = true;
 		}
 		break;
-
+		
+	case LUAU: // For Luau
+		if (!luauAdapter->isInitialized())
+		{
+			success = luauAdapter->initialize(workspacePath);
+			if (success)
+			{
+				std::cout << "\033[32mLSP Manager:\033[0m Initialized Luau adapter for "
+						<< workspacePath << std::endl;
+			}
+			else
+			{
+				std::cout << "\033[33mLSP Manager:\033[0m Luau adapter initialization failed - "
+							"LSP support will be disabled for Luau files"
+						<< std::endl;
+				success = false;
+			}
+		}
+		else
+		{
+			std::cout << "\033[32mLSP Manager:\033[0m Luau adapter already initialized."
+					<< std::endl;
+			success = true;
+		}
+		break;
+	
 	case NONE:
 	default:
 		std::cerr << "\033[31mLSP Manager:\033[0m Cannot initialize, no active "
@@ -164,6 +190,8 @@ bool LSPManager::isInitialized() const
 		return typescriptAdapter && typescriptAdapter->isInitialized();
 	case GOADAPTER: // For Go
 		return goAdapter && goAdapter->isInitialized();
+	case LUAU:
+		return luauAdapter && luauAdapter->isInitialized();
 	case NONE:
 	default:
 		return false;
@@ -203,6 +231,9 @@ bool LSPManager::selectAdapterForFile(const std::string &filePath)
 	} else if (ext == "go") // For Go
 	{
 		newAdapter = GOADAPTER;
+	} else if (ext == "lua" || ext == "luau")
+	{
+		newAdapter = LUAU;
 	}
 	// Add more else if blocks for other languages/adapters
 
@@ -253,6 +284,11 @@ bool LSPManager::sendRequest(const std::string &request)
 	case GOADAPTER: // For Go
 		return goAdapter && goAdapter->isInitialized() ? goAdapter->sendRequest(request)
 													   : false;
+	case LUAU:
+		return luauAdapter && luauAdapter->isInitialized()
+					? luauAdapter->sendRequest(request)
+					: false;
+
 	case NONE:
 	default:
 		std::cerr << "\033[31mLSP Manager:\033[0m Cannot send request, no "
@@ -285,6 +321,10 @@ std::string LSPManager::readResponse(int *contentLength)
 		return goAdapter && goAdapter->isInitialized()
 				   ? goAdapter->readResponse(contentLength)
 				   : "";
+	case LUAU:
+			return luauAdapter && luauAdapter->isInitialized()
+					? luauAdapter->readResponse(contentLength)
+					: "";
 	case NONE:
 	default:
 		std::cerr << "\033[31mLSP Manager:\033[0m Cannot read response, no "
@@ -318,6 +358,10 @@ std::string LSPManager::getLanguageId(const std::string &filePath) const
 		return goAdapter && goAdapter->isInitialized()
 				   ? goAdapter->getLanguageId(filePath)
 				   : "plaintext";
+    case LUAU:
+		return luauAdapter && luauAdapter->isInitialized()
+					? luauAdapter->getLanguageId(filePath)
+					: "plaintext";
 	case NONE:
 	default:
 		// If selectAdapterForFile failed (e.g. unknown extension), activeAdapter
@@ -342,6 +386,8 @@ bool LSPManager::hasWorkingAdapter() const
 		return typescriptAdapter && typescriptAdapter->isInitialized();
 	case GOADAPTER:
 		return goAdapter && goAdapter->isInitialized();
+	case LUAU:
+		return luauAdapter && luauAdapter->isInitialized();
 	case NONE:
 	default:
 		return false;

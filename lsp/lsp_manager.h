@@ -3,6 +3,7 @@
 #include "lsp_adapter_go.h" // Your new Go adapter
 #include "lsp_adapter_pyright.h"
 #include "lsp_adapter_typescript.h"
+#include "lsp_adapter_luau.h"
 
 #include <memory>
 #include <string>
@@ -39,6 +40,7 @@ class LSPManager
 	std::unique_ptr<LSPAdapterPyright> pyrightAdapter;
 	std::unique_ptr<LSPAdapterTypescript> typescriptAdapter;
 	std::unique_ptr<LSPAdapterGo> goAdapter; // For Go
+	std::unique_ptr<LSPAdapterLuau> luauAdapter; // For Luau
 
 	// Make sure the enum matches all your adapters
 	enum AdapterType {
@@ -47,7 +49,8 @@ class LSPManager
 		PYRIGHT,
 		TYPESCRIPT,
 		OMNISHARP, // For C#
-		GOADAPTER  // For Go
+		GOADAPTER,  // For Go
+		LUAU       // For Luau
 	};
 
 	AdapterType activeAdapter;
