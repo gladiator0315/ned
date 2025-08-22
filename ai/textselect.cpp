@@ -21,12 +21,12 @@
 #ifdef assert
 #undef assert
 #endif
-#include <utf8.h>
+#include "../lib/utfcpp/source/utf8.h"
 #ifdef _WIN32
 #define assert(expr) ((void)0)
 #endif
 #else
-#include <utf8.h>
+#include "../lib/utfcpp/source/utf8.h"
 #endif
 
 // Calculates the midpoint between two numbers.

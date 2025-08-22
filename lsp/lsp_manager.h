@@ -1,8 +1,8 @@
 #pragma once
-#include "lsp_adapter_clangd.h"
-#include "lsp_adapter_go.h" // Your new Go adapter
-#include "lsp_adapter_pyright.h"
-#include "lsp_adapter_typescript.h"
+// #include "lsp_adapter_clangd.h"
+// #include "lsp_adapter_go.h" // Your new Go adapter
+// #include "lsp_adapter_pyright.h"
+// #include "lsp_adapter_typescript.h"
 #include "lsp_adapter_luau.h"
 
 #include <memory>
@@ -35,11 +35,11 @@ class LSPManager
 	bool hasWorkingAdapter() const;
 
   private:
-	// LSP adapter instances
-	std::unique_ptr<LSPAdapterClangd> clangdAdapter;
-	std::unique_ptr<LSPAdapterPyright> pyrightAdapter;
-	std::unique_ptr<LSPAdapterTypescript> typescriptAdapter;
-	std::unique_ptr<LSPAdapterGo> goAdapter; // For Go
+	// // LSP adapter instances
+	// std::unique_ptr<LSPAdapterClangd> clangdAdapter;
+	// std::unique_ptr<LSPAdapterPyright> pyrightAdapter;
+	// std::unique_ptr<LSPAdapterTypescript> typescriptAdapter;
+	// std::unique_ptr<LSPAdapterGo> goAdapter; // For Go
 	std::unique_ptr<LSPAdapterLuau> luauAdapter; // For Luau
 
 	// Make sure the enum matches all your adapters

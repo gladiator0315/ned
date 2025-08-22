@@ -8,10 +8,10 @@ LSPManager gLSPManager;
 
 LSPManager::LSPManager() : activeAdapter(NONE)
 {
-	clangdAdapter = std::make_unique<LSPAdapterClangd>();
-	pyrightAdapter = std::make_unique<LSPAdapterPyright>();
-	typescriptAdapter = std::make_unique<LSPAdapterTypescript>();
-	goAdapter = std::make_unique<LSPAdapterGo>(); // For Go
+	// clangdAdapter = std::make_unique<LSPAdapterClangd>();
+	// pyrightAdapter = std::make_unique<LSPAdapterPyright>();
+	// typescriptAdapter = std::make_unique<LSPAdapterTypescript>();
+	// goAdapter = std::make_unique<LSPAdapterGo>(); // For Go
 	luauAdapter = std::make_unique<LSPAdapterLuau>(); // For Luau
 }
 
@@ -34,112 +34,112 @@ bool LSPManager::initialize(const std::string &path)
 
 	switch (activeAdapter)
 	{
-	case CLANGD:
-		if (!clangdAdapter->isInitialized())
-		{
-			success = clangdAdapter->initialize(workspacePath);
-			if (success)
-			{
-				std::cout << "\033[32mLSP Manager:\033[0m Initialized clangd "
-							 "adapter for "
-						  << workspacePath << std::endl;
-			} else
-			{
-				std::cout << "\033[33mLSP Manager:\033[0m Clangd adapter initialization "
-							 "failed - "
-							 "LSP support will be disabled for C/C++ files"
-						  << std::endl;
-				// Don't treat this as a fatal error - just disable LSP for this language
-				success = false;
-			}
-		} else
-		{
-			std::cout << "\033[32mLSP Manager:\033[0m Clangd adapter already "
-						 "initialized."
-					  << std::endl;
-			success = true; // Already initialized counts as success for this call
-		}
-		break;
+	// case CLANGD:
+	// 	if (!clangdAdapter->isInitialized())
+	// 	{
+	// 		success = clangdAdapter->initialize(workspacePath);
+	// 		if (success)
+	// 		{
+	// 			std::cout << "\033[32mLSP Manager:\033[0m Initialized clangd "
+	// 						 "adapter for "
+	// 					  << workspacePath << std::endl;
+	// 		} else
+	// 		{
+	// 			std::cout << "\033[33mLSP Manager:\033[0m Clangd adapter initialization "
+	// 						 "failed - "
+	// 						 "LSP support will be disabled for C/C++ files"
+	// 					  << std::endl;
+	// 			// Don't treat this as a fatal error - just disable LSP for this language
+	// 			success = false;
+	// 		}
+	// 	} else
+	// 	{
+	// 		std::cout << "\033[32mLSP Manager:\033[0m Clangd adapter already "
+	// 					 "initialized."
+	// 				  << std::endl;
+	// 		success = true; // Already initialized counts as success for this call
+	// 	}
+	// 	break;
 
-	case PYRIGHT:
-		if (!pyrightAdapter->isInitialized())
-		{
-			success = pyrightAdapter->initialize(workspacePath);
-			if (success)
-			{
-				std::cout << "\033[32mLSP Manager:\033[0m Initialized pyright "
-							 "adapter for "
-						  << workspacePath << std::endl;
-			} else
-			{
-				std::cout << "\033[33mLSP Manager:\033[0m Pyright adapter initialization "
-							 "failed - "
-							 "LSP support will be disabled for Python files"
-						  << std::endl;
-				// Don't treat this as a fatal error - just disable LSP for this language
-				success = false;
-			}
-		} else
-		{
-			std::cout << "\033[32mLSP Manager:\033[0m Pyright adapter already "
-						 "initialized."
-					  << std::endl;
-			success = true;
-		}
-		break;
+	// case PYRIGHT:
+	// 	if (!pyrightAdapter->isInitialized())
+	// 	{
+	// 		success = pyrightAdapter->initialize(workspacePath);
+	// 		if (success)
+	// 		{
+	// 			std::cout << "\033[32mLSP Manager:\033[0m Initialized pyright "
+	// 						 "adapter for "
+	// 					  << workspacePath << std::endl;
+	// 		} else
+	// 		{
+	// 			std::cout << "\033[33mLSP Manager:\033[0m Pyright adapter initialization "
+	// 						 "failed - "
+	// 						 "LSP support will be disabled for Python files"
+	// 					  << std::endl;
+	// 			// Don't treat this as a fatal error - just disable LSP for this language
+	// 			success = false;
+	// 		}
+	// 	} else
+	// 	{
+	// 		std::cout << "\033[32mLSP Manager:\033[0m Pyright adapter already "
+	// 					 "initialized."
+	// 				  << std::endl;
+	// 		success = true;
+	// 	}
+	// 	break;
 
-	case TYPESCRIPT:
-		if (!typescriptAdapter->isInitialized())
-		{
-			success = typescriptAdapter->initialize(workspacePath);
-			if (success)
-			{
-				std::cout << "\033[32mLSP Manager:\033[0m Initialized "
-							 "typescript adapter for "
-						  << workspacePath << std::endl;
-			} else
-			{
-				std::cout
-					<< "\033[33mLSP Manager:\033[0m TypeScript adapter initialization "
-					   "failed - "
-					   "LSP support will be disabled for TypeScript/JavaScript files"
-					<< std::endl;
-				// Don't treat this as a fatal error - just disable LSP for this language
-				success = false;
-			}
-		} else
-		{
-			std::cout << "\033[32mLSP Manager:\033[0m Typescript adapter "
-						 "already initialized."
-					  << std::endl;
-			success = true;
-		}
-		break;
+	// case TYPESCRIPT:
+	// 	if (!typescriptAdapter->isInitialized())
+	// 	{
+	// 		success = typescriptAdapter->initialize(workspacePath);
+	// 		if (success)
+	// 		{
+	// 			std::cout << "\033[32mLSP Manager:\033[0m Initialized "
+	// 						 "typescript adapter for "
+	// 					  << workspacePath << std::endl;
+	// 		} else
+	// 		{
+	// 			std::cout
+	// 				<< "\033[33mLSP Manager:\033[0m TypeScript adapter initialization "
+	// 				   "failed - "
+	// 				   "LSP support will be disabled for TypeScript/JavaScript files"
+	// 				<< std::endl;
+	// 			// Don't treat this as a fatal error - just disable LSP for this language
+	// 			success = false;
+	// 		}
+	// 	} else
+	// 	{
+	// 		std::cout << "\033[32mLSP Manager:\033[0m Typescript adapter "
+	// 					 "already initialized."
+	// 				  << std::endl;
+	// 		success = true;
+	// 	}
+	// 	break;
 
-	case GOADAPTER: // For Go
-		if (!goAdapter->isInitialized())
-		{
-			success = goAdapter->initialize(workspacePath);
-			if (success)
-			{
-				std::cout << "\033[32mLSP Manager:\033[0m Initialized Go adapter for "
-						  << workspacePath << std::endl;
-			} else
-			{
-				std::cout
-					<< "\033[33mLSP Manager:\033[0m Go adapter initialization failed - "
-					   "LSP support will be disabled for Go files"
-					<< std::endl;
-				// Don't treat this as a fatal error - just disable LSP for this language
-				success = false;
-			}
-		} else
-		{
-			std::cout << "\033[32mLSP Manager:\033[0m Go adapter already initialized."
-					  << std::endl;
-			success = true;
-		}
-		break;
+	// case GOADAPTER: // For Go
+	// 	if (!goAdapter->isInitialized())
+	// 	{
+	// 		success = goAdapter->initialize(workspacePath);
+	// 		if (success)
+	// 		{
+	// 			std::cout << "\033[32mLSP Manager:\033[0m Initialized Go adapter for "
+	// 					  << workspacePath << std::endl;
+	// 		} else
+	// 		{
+	// 			std::cout
+	// 				<< "\033[33mLSP Manager:\033[0m Go adapter initialization failed - "
+	// 				   "LSP support will be disabled for Go files"
+	// 				<< std::endl;
+	// 			// Don't treat this as a fatal error - just disable LSP for this language
+	// 			success = false;
+	// 		}
+	// 	} else
+	// 	{
+	// 		std::cout << "\033[32mLSP Manager:\033[0m Go adapter already initialized."
+	// 				  << std::endl;
+	// 		success = true;
+	// 	}
+	// 	break;
 		
 	case LUAU: // For Luau
 		if (!luauAdapter->isInitialized())
@@ -182,14 +182,14 @@ bool LSPManager::isInitialized() const
 {
 	switch (activeAdapter)
 	{
-	case CLANGD:
-		return clangdAdapter && clangdAdapter->isInitialized();
-	case PYRIGHT:
-		return pyrightAdapter && pyrightAdapter->isInitialized();
-	case TYPESCRIPT:
-		return typescriptAdapter && typescriptAdapter->isInitialized();
-	case GOADAPTER: // For Go
-		return goAdapter && goAdapter->isInitialized();
+	// case CLANGD:
+	// 	return clangdAdapter && clangdAdapter->isInitialized();
+	// case PYRIGHT:
+	// 	return pyrightAdapter && pyrightAdapter->isInitialized();
+	// case TYPESCRIPT:
+	// 	return typescriptAdapter && typescriptAdapter->isInitialized();
+	// case GOADAPTER: // For Go
+	// 	return goAdapter && goAdapter->isInitialized();
 	case LUAU:
 		return luauAdapter && luauAdapter->isInitialized();
 	case NONE:
@@ -269,21 +269,21 @@ bool LSPManager::sendRequest(const std::string &request)
 {
 	switch (activeAdapter)
 	{
-	case CLANGD:
-		return clangdAdapter && clangdAdapter->isInitialized()
-				   ? clangdAdapter->sendRequest(request)
-				   : false;
-	case PYRIGHT:
-		return pyrightAdapter && pyrightAdapter->isInitialized()
-				   ? pyrightAdapter->sendRequest(request)
-				   : false;
-	case TYPESCRIPT:
-		return typescriptAdapter && typescriptAdapter->isInitialized()
-				   ? typescriptAdapter->sendRequest(request)
-				   : false;
-	case GOADAPTER: // For Go
-		return goAdapter && goAdapter->isInitialized() ? goAdapter->sendRequest(request)
-													   : false;
+	// case CLANGD:
+	// 	return clangdAdapter && clangdAdapter->isInitialized()
+	// 			   ? clangdAdapter->sendRequest(request)
+	// 			   : false;
+	// case PYRIGHT:
+	// 	return pyrightAdapter && pyrightAdapter->isInitialized()
+	// 			   ? pyrightAdapter->sendRequest(request)
+	// 			   : false;
+	// case TYPESCRIPT:
+	// 	return typescriptAdapter && typescriptAdapter->isInitialized()
+	// 			   ? typescriptAdapter->sendRequest(request)
+	// 			   : false;
+	// case GOADAPTER: // For Go
+	// 	return goAdapter && goAdapter->isInitialized() ? goAdapter->sendRequest(request)
+	// 												   : false;
 	case LUAU:
 		return luauAdapter && luauAdapter->isInitialized()
 					? luauAdapter->sendRequest(request)
@@ -305,22 +305,22 @@ std::string LSPManager::readResponse(int *contentLength)
 
 	switch (activeAdapter)
 	{
-	case CLANGD:
-		return clangdAdapter && clangdAdapter->isInitialized()
-				   ? clangdAdapter->readResponse(contentLength)
-				   : "";
-	case PYRIGHT:
-		return pyrightAdapter && pyrightAdapter->isInitialized()
-				   ? pyrightAdapter->readResponse(contentLength)
-				   : "";
-	case TYPESCRIPT:
-		return typescriptAdapter && typescriptAdapter->isInitialized()
-				   ? typescriptAdapter->readResponse(contentLength)
-				   : "";
-	case GOADAPTER: // For Go
-		return goAdapter && goAdapter->isInitialized()
-				   ? goAdapter->readResponse(contentLength)
-				   : "";
+	// case CLANGD:
+	// 	return clangdAdapter && clangdAdapter->isInitialized()
+	// 			   ? clangdAdapter->readResponse(contentLength)
+	// 			   : "";
+	// case PYRIGHT:
+	// 	return pyrightAdapter && pyrightAdapter->isInitialized()
+	// 			   ? pyrightAdapter->readResponse(contentLength)
+	// 			   : "";
+	// case TYPESCRIPT:
+	// 	return typescriptAdapter && typescriptAdapter->isInitialized()
+	// 			   ? typescriptAdapter->readResponse(contentLength)
+	// 			   : "";
+	// case GOADAPTER: // For Go
+	// 	return goAdapter && goAdapter->isInitialized()
+	// 			   ? goAdapter->readResponse(contentLength)
+	// 			   : "";
 	case LUAU:
 			return luauAdapter && luauAdapter->isInitialized()
 					? luauAdapter->readResponse(contentLength)
@@ -342,22 +342,22 @@ std::string LSPManager::getLanguageId(const std::string &filePath) const
 	// activeAdapter based on the filePath. So, we can trust activeAdapter here.
 	switch (activeAdapter)
 	{
-	case CLANGD:
-		return clangdAdapter && clangdAdapter->isInitialized()
-				   ? clangdAdapter->getLanguageId(filePath)
-				   : "plaintext";
-	case PYRIGHT:
-		return pyrightAdapter && pyrightAdapter->isInitialized()
-				   ? pyrightAdapter->getLanguageId(filePath)
-				   : "plaintext";
-	case TYPESCRIPT:
-		return typescriptAdapter && typescriptAdapter->isInitialized()
-				   ? typescriptAdapter->getLanguageId(filePath)
-				   : "plaintext";
-	case GOADAPTER: // For Go
-		return goAdapter && goAdapter->isInitialized()
-				   ? goAdapter->getLanguageId(filePath)
-				   : "plaintext";
+	// case CLANGD:
+	// 	return clangdAdapter && clangdAdapter->isInitialized()
+	// 			   ? clangdAdapter->getLanguageId(filePath)
+	// 			   : "plaintext";
+	// case PYRIGHT:
+	// 	return pyrightAdapter && pyrightAdapter->isInitialized()
+	// 			   ? pyrightAdapter->getLanguageId(filePath)
+	// 			   : "plaintext";
+	// case TYPESCRIPT:
+	// 	return typescriptAdapter && typescriptAdapter->isInitialized()
+	// 			   ? typescriptAdapter->getLanguageId(filePath)
+	// 			   : "plaintext";
+	// case GOADAPTER: // For Go
+	// 	return goAdapter && goAdapter->isInitialized()
+	// 			   ? goAdapter->getLanguageId(filePath)
+	// 			   : "plaintext";
     case LUAU:
 		return luauAdapter && luauAdapter->isInitialized()
 					? luauAdapter->getLanguageId(filePath)
@@ -378,14 +378,14 @@ bool LSPManager::hasWorkingAdapter() const
 {
 	switch (activeAdapter)
 	{
-	case CLANGD:
-		return clangdAdapter && clangdAdapter->isInitialized();
-	case PYRIGHT:
-		return pyrightAdapter && pyrightAdapter->isInitialized();
-	case TYPESCRIPT:
-		return typescriptAdapter && typescriptAdapter->isInitialized();
-	case GOADAPTER:
-		return goAdapter && goAdapter->isInitialized();
+	// case CLANGD:
+	// 	return clangdAdapter && clangdAdapter->isInitialized();
+	// case PYRIGHT:
+	// 	return pyrightAdapter && pyrightAdapter->isInitialized();
+	// case TYPESCRIPT:
+	// 	return typescriptAdapter && typescriptAdapter->isInitialized();
+	// case GOADAPTER:
+	// 	return goAdapter && goAdapter->isInitialized();
 	case LUAU:
 		return luauAdapter && luauAdapter->isInitialized();
 	case NONE:

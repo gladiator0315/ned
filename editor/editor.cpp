@@ -33,6 +33,7 @@
 #include "../files/files.h"
 #include "../lsp/lsp_autocomplete.h"
 #include "../util/settings.h"
+#include "../lsp/lsp_globals.h"
 
 #include <algorithm>
 #include <cmath>
@@ -45,11 +46,29 @@ void Editor::textEditor()
 {
 	// process auto complete before edtior input....
 	gLSPAutocomplete.renderCompletions();
+
+	if (gLSPAutocomplete.showCompletions) {
+		std::cout << "[DEBUG] Popup visible with "
+				<< gLSPAutocomplete.getCompletionCount()
+				<< " items. Selected index="
+				<< gLSPAutocomplete.selectedCompletionIndex
+				<< std::endl;
+	}
+
+
 	gAITab.update();
 
 	setupEditorDisplay();
 
 	processEditorInput();
+
+	ImGui::Separator();
+	if (gLSPManager.isInitialized()) {
+		ImGui::TextUnformatted("LSP: connected");
+	} else {
+		ImGui::TextUnformatted("LSP: not connected");
+	}
+
 
 	gEditorRender.renderEditorFrame();
 }

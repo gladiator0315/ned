@@ -1,0 +1,99 @@
+==================
+Empty do block
+==================
+
+do end
+
+---
+
+(chunk
+  (do_stmt))
+
+==================
+Do block with statement
+==================
+
+do x = true end
+
+---
+
+(chunk
+  (do_stmt
+    (block
+      (assign_stmt
+        (varlist
+          (var
+            (name)))
+        (explist
+          (boolean))))))
+
+==================
+Do block with multiple statements
+==================
+
+do 
+  x = true
+  y = false
+  call()
+end
+
+---
+
+(chunk
+  (do_stmt
+    (block
+      (assign_stmt
+        (varlist
+          (var
+            (name)))
+        (explist
+          (boolean)))
+      (assign_stmt
+        (varlist
+          (var
+            (name)))
+        (explist
+          (boolean)))
+      (call_stmt
+        (var
+          (name))
+        (arglist)))))
+
+==================
+Luau: Can use continue last statement
+==================
+
+if true then
+    continue
+end
+
+---
+
+(chunk
+  (if_stmt
+    (boolean)
+    (block
+      (continue_stmt))))
+
+==================
+Luau: Continue is context sensitive
+==================
+
+if true then
+    local continue = true
+    continue
+end
+
+---
+
+(chunk
+  (if_stmt
+    (boolean)
+    (block
+      (local_var_stmt
+        (bindinglist
+          (binding
+            (name)))
+        (explist
+          (boolean)))
+      (continue_stmt))))

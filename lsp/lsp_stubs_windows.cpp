@@ -7,13 +7,8 @@
 #include "lsp_goto_ref.h"
 #include "lsp_symbol_info.h"
 #include <iostream>
-
-// Global instances - these need to exist for linking
-EditorLSP gEditorLSP;
-LSPAutocomplete gLSPAutocomplete;
-LSPGotoDef gLSPGotoDef;
-LSPGotoRef gLSPGotoRef;
-LSPSymbolInfo gLSPSymbolInfo;
+#include <windows.h>
+#include <string>
 
 // Static member definition
 bool LSPAutocomplete::wasShowingLastFrame = false;
@@ -23,12 +18,58 @@ EditorLSP::EditorLSP() {}
 EditorLSP::~EditorLSP() {}
 
 bool EditorLSP::initialize(const std::string &workspacePath) {
-    std::cout << "LSP functionality is disabled on Windows" << std::endl;
-    return false;
+    std::wstring cmd = L"servers/luau-lsp/current/win-x64/luau-lsp.exe --stdio";
+
+    SECURITY_ATTRIBUTES sa{};
+    sa.nLength = sizeof(sa);
+    sa.bInheritHandle = TRUE;
+
+    HANDLE hStdInRead, hStdInWrite;
+    HANDLE hStdOutRead, hStdOutWrite;
+    CreatePipe(&hStdInRead, &hStdInWrite, &sa, 0);
+    CreatePipe(&hStdOutRead, &hStdOutWrite, &sa, 0);
+    SetHandleInformation(hStdInWrite, HANDLE_FLAG_INHERIT, 0);
+    SetHandleInformation(hStdOutRead, HANDLE_FLAG_INHERIT, 0);
+
+    STARTUPINFOW si{};
+    si.cb = sizeof(si);
+    si.hStdInput = hStdInRead;
+    si.hStdOutput = hStdOutWrite;
+    si.hStdError = hStdOutWrite;
+    si.dwFlags |= STARTF_USESTDHANDLES;
+
+    PROCESS_INFORMATION pi{};
+    if (!CreateProcessW(
+        nullptr,
+        cmd.data(),
+        nullptr, nullptr,
+        TRUE, // inherit handles
+        CREATE_NO_WINDOW,
+        nullptr, nullptr,
+        &si, &pi
+    )) {
+        return false;
+    }
+
+    CloseHandle(pi.hThread);
+    // m_processHandle = pi.hProcess;
+    // m_childStdin = hStdInWrite;
+    // m_childStdout = hStdOutRead;
+    return true;
 }
 
 void EditorLSP::didOpen(const std::string &filePath, const std::string &content) {
-    // Stub - no action on Windows
+    std::string msg = R"({
+      "jsonrpc":"2.0",
+      "method":"textDocument/didOpen",
+      "params":{"textDocument":{"uri":"file://" + filePath +
+      R"(","languageId":"luau","version":1,"text":")" + content + R"("}}
+    })";
+
+    std::string framed = "Content-Length: " + std::to_string(msg.size()) + "\r\n\r\n" + msg;
+
+    DWORD written;
+    // WriteFile(m_childStdin, framed.c_str(), (DWORD)framed.size(), &written, nullptr);
 }
 
 void EditorLSP::didChange(const std::string &filePath, int version) {

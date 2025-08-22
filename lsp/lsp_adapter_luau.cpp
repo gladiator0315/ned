@@ -6,6 +6,7 @@
 #include <iostream>
 #include <nlohmann/json.hpp>
 #include <algorithm>
+#include "lsp_utils.h"
 
 using json = nlohmann::json;
 namespace fs = std::filesystem;
@@ -81,11 +82,7 @@ static fs::path exeDir(){
     wchar_t buf[MAX_PATH]; DWORD n = GetModuleFileNameW(nullptr, buf, MAX_PATH);
     return n ? fs::path(buf).parent_path() : fs::current_path();
 }
-static std::string toUri(const fs::path& p){
-    std::string u = "file:///";
-    u += p.generic_string();
-    return u;
-}
+
 static fs::path bundledLuauExe(){
     auto p = exeDir() / "servers/luau-lsp/current/win-x64/luau-lsp.exe";
     return p;
@@ -98,21 +95,21 @@ public:
 
     bool start(const std::string& exeUtf8, const std::string& workspace){
         std::wstring exe(exeUtf8.begin(), exeUtf8.end());
-        auto p = spawnLuau(exe, {L"lsp"});
+        auto p = spawnLuau(exe, {L"lsp", L"--docs=./luau-config/en-us.json", L"--definitions=./luau-config/globalTypes.d.lua", L"--base-luaurc=./luau-config/.luaurc"});
         if(!p) return false;
         pipes = *p;
 
-        // initialize (utf-16 positions + workspace)
+        // initialize (utf-8 positions + workspace)
         json init = {
             {"jsonrpc","2.0"},
             {"id",1},
             {"method","initialize"},
             {"params",{
                 {"processId",(int)GetCurrentProcessId()},
-                {"positionEncoding","utf-16"},
-                {"rootUri", workspace.empty()? nullptr : json(toUri(fs::path(workspace)))},
+                {"positionEncoding","utf-8"},
+                {"rootUri", workspace.empty()? nullptr : json(pathToFileUri(workspace))},
                 {"workspaceFolders", workspace.empty()? json::array() :
-                    json::array({ {{"uri", toUri(fs::path(workspace))},
+                    json::array({ {{"uri", pathToFileUri(workspace)},
                                    {"name", fs::path(workspace).filename().string()} } })},
                 {"capabilities", {
                     {"textDocument", {
@@ -187,8 +184,43 @@ bool LSPAdapterLuau::sendRequest(const std::string& request){
     return impl ? impl->send(request) : false;
 }
 
-std::string LSPAdapterLuau::readResponse(int *contentLength){
-    return impl ? impl->read(contentLength) : std::string();
+// std::string LSPAdapterLuau::readResponse(int *contentLength){
+//     return impl ? impl->read(contentLength) : std::string();
+// }
+
+std::string LSPAdapterLuau::readResponse(int *contentLength) {
+    if (contentLength) {
+        *contentLength = -1;
+    }
+
+    if (!impl) {
+        std::cerr << "[LSPAdapterLuau] readResponse: impl is null\n";
+        return "";
+    }
+
+    try {
+        std::string response = impl->read(contentLength);
+        if (!response.empty()) {
+            // Parse to check for errors
+            try {
+                json jsonResponse = json::parse(response);
+                if (jsonResponse.contains("error")) {
+                    std::cerr << "[LSPAdapterLuau] LSP Error: " << jsonResponse["error"].dump() << "\n";
+                }
+            } catch (...) {
+                // Not JSON, that's fine
+            }
+            
+            std::cout << "[LSPAdapterLuau] RX (" 
+                      << (contentLength ? *contentLength : -1)
+                      << "): " << response.substr(0, 120) << "...\n";
+        }
+        return response;
+    } catch (const std::exception &e) {
+        std::cerr << "[LSPAdapterLuau] Exception in readResponse: "
+                  << e.what() << "\n";
+        return "";
+    }
 }
 
 std::string LSPAdapterLuau::getLanguageId(const std::string& /*filePath*/) const {

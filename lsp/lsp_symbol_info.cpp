@@ -2,7 +2,6 @@
 #include "../editor/editor.h"
 #include <iostream>
 #include <sstream>
-LSPSymbolInfo gLSPSymbolInfo;
 
 LSPSymbolInfo::LSPSymbolInfo() = default;
 

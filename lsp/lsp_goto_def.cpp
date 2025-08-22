@@ -11,8 +11,6 @@
 
 using json = nlohmann::json;
 
-LSPGotoDef gLSPGotoDef;
-
 LSPGotoDef::LSPGotoDef()
 	: currentRequestId(2000), showDefinitionOptions(false), selectedDefinitionIndex(0)
 {

@@ -47,7 +47,6 @@ class LSPAutocomplete
 
 	void requestCompletion(const std::string &filePath, int line, int character);
 	void renderCompletions();
-	void processPendingResponses(); // New method to process responses in main thread
 
 	bool showCompletions = false;
 	int selectedCompletionIndex = 0;
@@ -58,6 +57,9 @@ class LSPAutocomplete
 
 	// State tracking for focus/frame logic
 	static bool wasShowingLastFrame;
+
+	public:
+		size_t getCompletionCount() const { return currentCompletionItems.size(); }
 
   private:
 	std::vector<CompletionDisplayItem> currentCompletionItems;
@@ -87,6 +89,7 @@ class LSPAutocomplete
 	void resetPopupPosition(); // New function to reset position cache
 
 	// requesting logic
+	std::string cleanSnippetFormatting(const std::string& text);
 	std::string formCompletionRequest(int requestId,
 									  const std::string &filePath,
 									  int line,
@@ -119,7 +122,57 @@ class LSPAutocomplete
 		int line_start = editor_state.editor_content_lines[line];
 		return {line, index - line_start};
 	}
-};
 
-// Global instance
-extern LSPAutocomplete gLSPAutocomplete;
+	
+	private:
+		enum class CompletionContext {
+			Global,
+			PropertyAccess,    // object.
+			FunctionCall,      // function(
+			TableAccess,       // table[
+			StringMethod,      // string:
+			Unknown
+		};
+
+	private:
+		// Context-aware filtering and prioritization
+		bool shouldIncludeCompletion(const CompletionDisplayItem& item, CompletionContext context);
+		void prioritizeCompletions(std::vector<CompletionDisplayItem>& items, 
+								CompletionContext context,
+								const std::string& currentWord);
+		void insertCompletion(const CompletionDisplayItem& item);
+		
+		// Enhanced UI rendering
+		void renderCompletionItem(const CompletionDisplayItem& item, bool isSelected);
+		void renderDocumentationTooltip(const CompletionDisplayItem& item);
+		
+		// Debouncing and performance
+		std::chrono::steady_clock::time_point lastCompletionRequestTime;
+		static constexpr int COMPLETION_DEBOUNCE_MS = 150;
+		
+		// Snippet handling
+		int cursorOffset = 0;
+    
+    CompletionContext detectCompletionContext(int cursorPos) {
+        if (cursorPos <= 0) return CompletionContext::Global;
+        
+        std::string content = editor_state.fileContent;
+        
+        // Look backwards from cursor to determine context
+        for (int i = cursorPos - 1; i >= 0; i--) {
+            char c = content[i];
+            
+            if (c == ':') return CompletionContext::PropertyAccess;
+            if (c == ':') return CompletionContext::StringMethod;
+            if (c == '[') return CompletionContext::TableAccess;
+            if (c == '(') return CompletionContext::FunctionCall;
+            
+            // Skip whitespace and comments
+            if (!isspace(c) && c != '-' && c != '-') {
+                break;
+            }
+        }
+        
+        return CompletionContext::Global;
+    }
+};

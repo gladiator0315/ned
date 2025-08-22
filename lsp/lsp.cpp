@@ -4,9 +4,7 @@
 #include <iostream>
 #include <sstream>
 #include <string>
-
-// Global instance
-EditorLSP gEditorLSP;
+#include "lsp_utils.h"
 
 EditorLSP::EditorLSP() : currentRequestId(1000) {}
 
@@ -110,19 +108,19 @@ void EditorLSP::didOpen(const std::string &filePath, const std::string &content)
 		}
 	}
 
-	std::string notification = std::string(R"({
+	const std::string uri = pathToFileUri(filePath);
+    std::string notification = std::string(R"({
             "jsonrpc": "2.0",
             "method": "textDocument/didOpen",
             "params": {
                 "textDocument": {
-                    "uri": "file://)") +
-							   filePath + R"(",
+                    "uri": ")") + uri + R"(",
                     "languageId": ")" +
-							   gLSPManager.getLanguageId(filePath) + R"(",
+                               gLSPManager.getLanguageId(filePath) + R"(",
                     "version": 1,
                     "text": ")" +
-							   escapeJSON(content) +
-							   R"("
+                               escapeJSON(content) +
+                               R"("
                 }
             }
         })";
@@ -143,6 +141,22 @@ void EditorLSP::didOpen(const std::string &filePath, const std::string &content)
 
 void EditorLSP::didChange(const std::string &filePath, int version)
 {
+    static std::chrono::steady_clock::time_point lastChangeTime;
+    static std::string lastChangeContent;
+    
+    auto now = std::chrono::steady_clock::now();
+    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - lastChangeTime).count();
+
+    if (elapsed < 50 && editor_state.fileContent == lastChangeContent) {
+        return;
+    }
+    
+    lastChangeTime = now;
+    lastChangeContent = editor_state.fileContent;
+    
+    std::cout << "[LSP] didChange -> " << filePath 
+              << " v" << version << " len=" << editor_state.fileContent.size() << "\n";
+	
 	// Select the appropriate adapter for this file
 	if (!gLSPManager.selectAdapterForFile(filePath))
 	{
@@ -183,24 +197,12 @@ void EditorLSP::didChange(const std::string &filePath, int version)
 		}
 	}
 
+	const std::string uri = pathToFileUri(filePath);
 	std::string notification = std::string(R"({
-        "jsonrpc": "2.0",
-        "method": "textDocument/didChange",
-        "params": {
-            "textDocument": {
-                "uri": "file://)") +
-							   filePath + R"(",
-                "version": )" + std::to_string(version) +
-							   R"(
-            },
-            "contentChanges": [
-                {
-                    "text": ")" +
-							   escapeJSON(editor_state.fileContent) + R"("
-                }
-            ]
-        }
-    })";
+	"jsonrpc":"2.0","method":"textDocument/didChange","params":{
+		"textDocument":{"uri":")") + uri + R"(","version":)" + std::to_string(version) + R"(},
+		"contentChanges":[{"text":")" + escapeJSON(editor_state.fileContent) + R"("}]
+	}})";
 
 	// Only send request if we have a working adapter
 	if (gLSPManager.hasWorkingAdapter())
@@ -221,4 +223,33 @@ void EditorLSP::didChange(const std::string &filePath, int version)
 			<< "\033[33mLSP:\033[0m Skipping LSP request - no working adapter available"
 			<< std::endl;
 	}
+}
+
+void EditorLSP::didSave(const std::string& filePath, int /*version*/) {
+    if (!gLSPManager.selectAdapterForFile(filePath)) return;
+    if (!gLSPManager.isInitialized()) {
+        std::string ws = filePath.substr(0, filePath.find_last_of("/\\"));
+        try { if (!gLSPManager.initialize(ws)) return; } catch (...) { return; }
+    }
+    const std::string uri = pathToFileUri(filePath);
+	std::string notification = std::string(R"({
+	"jsonrpc":"2.0","method":"textDocument/didSave","params":{
+		"textDocument":{"uri":")") + uri + R"("},
+		"text":")" + escapeJSON(editor_state.fileContent) + R"("
+	}})";
+    if (gLSPManager.hasWorkingAdapter()) gLSPManager.sendRequest(notification);
+}
+
+void EditorLSP::didClose(const std::string& filePath) {
+    if (!gLSPManager.selectAdapterForFile(filePath)) return;
+    if (!gLSPManager.isInitialized()) {
+        std::string ws = filePath.substr(0, filePath.find_last_of("/\\"));
+        try { if (!gLSPManager.initialize(ws)) return; } catch (...) { return; }
+    }
+    const std::string uri = pathToFileUri(filePath);
+	std::string notification = std::string(R"({
+	"jsonrpc":"2.0","method":"textDocument/didClose","params":{
+		"textDocument":{"uri":")") + uri + R"("}
+	}})";
+    if (gLSPManager.hasWorkingAdapter()) gLSPManager.sendRequest(notification);
 }

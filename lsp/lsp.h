@@ -15,6 +15,9 @@ class EditorLSP
 	bool initialize(const std::string &workspacePath);
 	void didOpen(const std::string &filePath, const std::string &content);
 	void didChange(const std::string &filePath, int version);
+	void didSave(const std::string& filePath, int version);
+	void didClose(const std::string& filePath);
+	void requestCompletion(const std::string& filePath, int line, int col);
 	int getNextRequestId() { return ++currentRequestId; }
 
   private:
@@ -23,7 +26,8 @@ class EditorLSP
 
 	// Request tracking
 	int currentRequestId = 1000;
-};
 
-// Global instance
-extern EditorLSP gEditorLSP;
+	// HANDLE m_processHandle = nullptr;
+    // HANDLE m_childStdin   = nullptr;
+    // HANDLE m_childStdout  = nullptr;
+};

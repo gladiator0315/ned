@@ -22,5 +22,3 @@ class LSPSymbolInfo
 	bool showSymbolInfo = false;
 	ImVec2 displayPosition;
 };
-
-extern LSPSymbolInfo gLSPSymbolInfo;

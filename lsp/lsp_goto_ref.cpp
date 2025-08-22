@@ -8,8 +8,6 @@
 #include <sstream>
 #include <string>
 
-LSPGotoRef gLSPGotoRef;
-
 LSPGotoRef::LSPGotoRef()
 	: currentRequestId(3000), showReferenceOptions(false), selectedReferenceIndex(0)
 {

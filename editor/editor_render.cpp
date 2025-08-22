@@ -21,6 +21,7 @@
 #include "editor_selection.h"
 #include "editor_tree_sitter.h"
 #include "editor_utils.h"
+#include "../lsp/lsp_globals.h"
 
 #include <iostream>
 

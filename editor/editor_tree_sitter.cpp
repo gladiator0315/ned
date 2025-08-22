@@ -7,8 +7,8 @@
 #include <vector>
 
 #ifndef PLATFORM_WINDOWS
-#include <libgen.h> // For dirname
-#include <unistd.h> // For getcwd, readlink
+// #include <libgen.h> // For dirname
+// #include <unistd.h> // For getcwd, readlink
 #else
 #define PATH_MAX 260
 #include <windows.h> // For GetModuleFileNameA
@@ -48,12 +48,12 @@ extern "C" TSLanguage *tree_sitter_java();
 extern "C" TSLanguage *tree_sitter_go();
 extern "C" TSLanguage *tree_sitter_hcl();
 extern "C" TSLanguage *tree_sitter_json();
-extern "C" TSLanguage *tree_sitter_kotlin();
 extern "C" TSLanguage *tree_sitter_bash();
 extern "C" TSLanguage *tree_sitter_c();
 extern "C" TSLanguage *tree_sitter_rust();
 extern "C" TSLanguage *tree_sitter_toml();
 extern "C" TSLanguage *tree_sitter_ruby();
+extern "C" TSLanguage *tree_sitter_luau();
 
 TSParser *TreeSitter::getParser()
 {
@@ -124,9 +124,6 @@ TreeSitter::detectLanguageAndQuery(const std::string &extension)
 	} else if (extension == ".sh")
 	{
 		return {tree_sitter_bash(), query_prefix + "sh.scm"};
-	} else if (extension == ".kt")
-	{
-		return {tree_sitter_kotlin(), query_prefix + "kotlin.scm"};
 	} else if (extension == ".rs")
 	{
 		return {tree_sitter_rust(), query_prefix + "rs.scm"};
@@ -136,6 +133,9 @@ TreeSitter::detectLanguageAndQuery(const std::string &extension)
 	} else if (extension == ".rb")
 	{
 		return {tree_sitter_ruby(), query_prefix + "rb.scm"};
+	} else if (extension == ".lua" || extension == ".luau") 
+	{
+		return {tree_sitter_luau(), query_prefix + "luau.scm"};
 	}
 	return {};
 }
@@ -263,6 +263,8 @@ std::string TreeSitter::getResourcePath(const std::string &relativePath)
 			
 			// For portable builds: Check if queries folder exists relative to exe
 			std::string portablePath = exeDir + "\\" + relativePath;
+			// Replace forward slashes with backslashes for Windows
+			std::replace(portablePath.begin(), portablePath.end(), '/', '\\');
 			std::ifstream testFile(portablePath);
 			if (testFile.good()) {
 				std::cout << "[DEBUG] Windows Portable Query Path: " << portablePath << std::endl;
@@ -275,56 +277,83 @@ std::string TreeSitter::getResourcePath(const std::string &relativePath)
 			{
 				std::string buildDir = exeDir.substr(0, secondLastSlash);
 				std::string devPath = buildDir + "\\" + relativePath;
+				// Replace forward slashes with backslashes for Windows
+				std::replace(devPath.begin(), devPath.end(), '/', '\\');
 				std::cout << "[DEBUG] Windows Dev Query Path: " << devPath << std::endl;
 				return devPath;
 			}
 		}
 	}
-	// Fallback for development builds
-	return "..\\" + relativePath;
+	// Fallback for development builds - also fix slashes
+	std::string fallbackPath = "..\\" + relativePath;
+	std::replace(fallbackPath.begin(), fallbackPath.end(), '/', '\\');
+	return fallbackPath;
 #endif
 	// Fallback for development environment
 	return "editor/queries/" + relativePath;
 }
 
 TSQuery *TreeSitter::loadQueryFromCacheOrFile(TSLanguage *lang,
-											  const std::string &query_path)
+                                              const std::string &query_path)
 {
-	std::string full_path = getResourcePath(query_path);
+    std::string full_path = getResourcePath(query_path);
+    
+    // DEBUG: Print the path and check if file exists
+    std::cout << "[DEBUG] Loading query from: " << full_path << std::endl;
+    
+    std::ifstream test_file(full_path);
+    if (!test_file.is_open()) {
+        std::cerr << "[ERROR] File does not exist or cannot be opened: " << full_path << std::endl;
+    } else {
+        test_file.close();
+    }
 
-	// Use full_path as the cache key consistently
-	auto cacheIt = queryCache.find(full_path);
-	if (cacheIt != queryCache.end())
-	{
-		return cacheIt->second;
-	}
+    auto cacheIt = queryCache.find(full_path);
+    if (cacheIt != queryCache.end())
+    {
+        return cacheIt->second;
+    }
 
-	std::ifstream file(full_path);
-	if (!file.is_open())
-	{
-		std::cerr << "Failed to open query file: " << full_path << "\n";
-		return nullptr;
-	}
-	std::string query_src((std::istreambuf_iterator<char>(file)),
-						  std::istreambuf_iterator<char>());
-	file.close();
+    std::ifstream file(full_path);
+    if (!file.is_open())
+    {
+        std::cerr << "Failed to open query file: " << full_path << "\n";
+        return nullptr;
+    }
+    
+    // DEBUG: Print file size and content
+    file.seekg(0, std::ios::end);
+    size_t file_size = file.tellg();
+    file.seekg(0, std::ios::beg);
+    std::cout << "[DEBUG] File size: " << file_size << " bytes" << std::endl;
+    
+    std::string query_src((std::istreambuf_iterator<char>(file)),
+                          std::istreambuf_iterator<char>());
+    file.close();
+    
+    // DEBUG: Print first 150 characters of the query
+    std::cout << "[DEBUG] Query content (first 150 chars): " 
+              << query_src.substr(0, 150) << std::endl;
 
-	uint32_t error_offset;
-	TSQueryError error_type;
-	TSQuery *query = ts_query_new(
-		lang, query_src.c_str(), query_src.size(), &error_offset, &error_type);
+    uint32_t error_offset;
+    TSQueryError error_type;
+    TSQuery *query = ts_query_new(
+        lang, query_src.c_str(), query_src.size(), &error_offset, &error_type);
 
-	if (!query)
-	{
-		std::cerr << "Query error (" << error_type << ") at offset " << error_offset
-				  << "\n";
-		return nullptr;
-	}
+    if (!query)
+    {
+        std::cerr << "Query error (" << error_type << ") at offset " << error_offset
+                  << "\n";
+        std::cerr << "Context around error: " 
+                  << query_src.substr(std::max(0, (int)error_offset - 20), 40)
+                  << std::endl;
+        return nullptr;
+    }
 
-	// Store using full_path as key
-	queryCache[full_path] = query;
-	return query;
+    queryCache[full_path] = query;
+    return query;
 }
+
 void TreeSitter::clearQueryCache()
 {
 	std::lock_guard<std::mutex> lock(parserMutex);

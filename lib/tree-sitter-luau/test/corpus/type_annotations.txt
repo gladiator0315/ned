@@ -1,0 +1,670 @@
+==================
+Basic type declaration
+==================
+
+type Foo = string
+
+---
+
+(chunk
+  (type_stmt
+    (name)
+    (namedtype (name))))
+
+==================
+Exported type declaration
+==================
+
+export type Foo = string
+
+---
+
+(chunk
+  (type_stmt
+    (name)
+    (namedtype (name))))
+
+==================
+Generic type declaration
+==================
+
+type Foo<T> = T
+
+---
+
+(chunk
+  (type_stmt
+    (name)
+    (genericdef
+      (generic (name)))
+    (namedtype (name))))
+
+==================
+Array type declaration
+==================
+
+type Foo = { string }
+
+---
+
+(chunk
+  (type_stmt
+    left: (name)
+    right: (tbtype
+      array_type_specifier: (namedtype
+        type_name: (name)
+      ))))
+
+==================
+Module type declaration
+==================
+
+type Foo = Promise.Result
+
+---
+
+(chunk
+  (type_stmt
+    (name)
+    (namedtype (name) (name))))
+
+==================
+Type Declaration with generic type
+==================
+
+type Foo = Map<string, number>
+
+---
+
+(chunk
+  (type_stmt
+    (name)
+    (namedtype
+      (name)
+      (typeparam (namedtype (name)))
+      (typeparam (namedtype (name))))))
+
+==================
+Typeof type declaration
+==================
+
+type Foo = typeof(Account)
+
+---
+
+(chunk
+  (type_stmt
+    (name)
+    (dyntype (var (name)))))
+
+==================
+Union type declaration
+==================
+
+type Foo = string | number
+
+---
+
+(chunk
+  (type_stmt
+    (name)
+    (bintype (namedtype (name)) (namedtype (name)))))
+
+==================
+Intersection type declaration
+==================
+
+type Foo = string & number
+
+---
+
+(chunk
+  (type_stmt
+    (name)
+    (bintype (namedtype (name)) (namedtype (name)))))
+
+==================
+Long union type declaration
+==================
+
+type Foo = string | number | Foo | Bar
+
+---
+
+(chunk
+  (type_stmt
+    (name)
+    (bintype
+      (bintype
+        (bintype
+          (namedtype (name)) (namedtype (name)))
+        (namedtype (name)))
+      (namedtype (name)))))
+    
+==================
+Long intersection type declaration
+==================
+
+type Foo = string & number & Foo & Bar
+
+---
+
+(chunk
+  (type_stmt
+    (name)
+    (bintype
+      (bintype
+        (bintype
+          (namedtype (name)) (namedtype (name)))
+        (namedtype (name)))
+      (namedtype (name)))))
+
+==================
+Mixed union & intersection type declaration
+==================
+
+type Foo = string | number & Foo | Bar
+
+---
+
+(chunk
+  (type_stmt
+    (name)
+    (bintype
+      (bintype
+        (namedtype (name))
+        (bintype
+          (namedtype (name)) (namedtype (name))))
+      (namedtype (name)))))
+
+==================
+Optional type declaration
+==================
+
+type Foo = string?
+
+---
+
+(chunk
+  (type_stmt
+    (name)
+    (untype
+      (namedtype
+        (name)))))
+
+==================
+Complex optional type declaration 1
+==================
+
+type Foo = string | number?
+
+---
+
+(chunk
+  (type_stmt
+    (name)
+    (bintype
+      (namedtype (name))
+      (untype
+        (namedtype (name))))))
+
+==================
+Complex optional type declaration 2
+==================
+
+type Foo = (string | number)?
+
+---
+
+(chunk
+  (type_stmt
+    (name)
+    (untype
+      (wraptype
+        (bintype
+          (namedtype (name))
+          (namedtype (name)))))))
+
+==================
+Function type declaration 1
+==================
+
+type Foo = () -> number
+
+---
+
+(chunk
+  (type_stmt
+    (name)
+    (fntype
+      (paramtypelist)
+      (namedtype (name)))))
+
+==================
+Function type declaration 2
+==================
+
+type Foo = (string, number) -> number
+
+---
+
+(chunk
+  (type_stmt
+    (name)
+    (fntype
+      (paramtypelist
+        (namedtype (name))
+        (namedtype (name)))
+      (namedtype (name)))))
+
+==================
+Function empty return type declaration
+==================
+
+type Foo = (string, number) -> ()
+
+---
+
+(chunk
+  (type_stmt
+    (name)
+    (fntype
+      (paramtypelist
+        (namedtype (name))
+        (namedtype (name)))
+      (typepack))))
+
+==================
+Function multiple return type declaration
+==================
+
+type Foo = (string, number) -> (number, string)
+
+---
+
+(chunk
+  (type_stmt
+    (name)
+    (fntype
+      (paramtypelist
+        (namedtype (name))
+        (namedtype (name)))
+      (typepack
+        (typelist
+          (namedtype (name))
+          (namedtype (name)))))))
+
+==================
+Function variadic argument type declaration
+==================
+
+type Foo = (string, ...number) -> ()
+
+---
+
+(chunk
+  (type_stmt
+    (name)
+    (fntype
+      (paramtypelist
+        (namedtype (name))
+        (variadic (namedtype (name))))
+      (typepack))))
+
+==================
+Function variadic return type declaration
+==================
+
+type Foo = (string, number) -> ...number
+
+---
+
+(chunk
+  (type_stmt
+    (name)
+    (fntype
+      (paramtypelist
+        (namedtype (name))
+        (namedtype (name)))
+      (typepack (variadic (namedtype (name)))))))
+
+==================
+Function named arg type declaration
+==================
+
+type Foo = (string, count: number) -> string
+
+---
+
+(chunk
+  (type_stmt
+    (name)
+    (fntype
+      (paramtypelist
+        (namedtype (name))
+        (name) (namedtype (name)))
+      (namedtype (name)))))
+
+==================
+Table type declaration
+==================
+
+type Foo = { foo: string }
+
+---
+
+(chunk
+  (type_stmt
+    left: (name)
+    right: (tbtype
+      (kvtypelist
+        (proptype
+          field_name: (name)
+          type_specifier: (namedtype
+            type_name: (name)))))))
+
+==================
+Table type declaration with type index
+==================
+
+type Foo = { [number]: string }
+
+---
+
+(chunk
+  (type_stmt
+    left: (name)
+    right: (tbtype
+      (kvtypelist
+        (indexertype
+          indexer_type_specifier: (namedtype
+            type_name: (name))
+          value_type_specifier: (namedtype
+            type_name: (name)))))))
+
+==================
+Local Assignment type specifier
+==================
+
+local x: number = 3
+
+---
+
+(chunk
+  (local_var_stmt
+    (bindinglist
+      (binding
+        (name)
+        (namedtype (name))))
+    (explist
+      (number))))
+
+==================
+Multiple Local Assignment type specifier
+==================
+
+local x: number, y, z: string = 3, nil, "foo"
+
+---
+
+(chunk
+  (local_var_stmt
+    (bindinglist
+      (binding
+        (name)
+        (namedtype (name)))
+      (binding (name))
+      (binding
+        (name)
+        (namedtype (name))))
+    (explist
+      (number)
+      (nil)
+      (string))))
+
+==================
+Function declaration return type
+==================
+
+function foo(): string
+end
+
+---
+
+(chunk
+  (fn_stmt
+    (name)
+    (namedtype
+      (name))))
+
+==================
+Function declaration parameter types
+==================
+
+function foo(foo, bar: string)
+end
+
+---
+
+(chunk
+  (fn_stmt
+    function_name: (name)
+    (paramlist
+      (param
+        parameter_name: (name))
+      (param
+        parameter_name: (name)
+        type_specifier: (namedtype
+          type_name: (name))))))
+
+==================
+Function declaration ellipse type
+==================
+
+function foo(foo, bar: string, ...: string)
+end
+
+---
+
+(chunk
+  (fn_stmt
+    function_name: (name)
+    (paramlist
+      (param
+        parameter_name: (name))
+      (param
+        parameter_name: (name)
+        type_specifier: (namedtype
+          type_name: (name)))
+      (param
+        (vararg)
+        type_specifier: (namedtype
+          type_name: (name))))))
+
+==================
+Generic function declaration
+==================
+
+function foo<T, U>()
+end
+
+---
+
+(chunk
+  (fn_stmt
+    (name)
+    (generic
+      (name))
+    (generic
+      (name))))
+
+==================
+Numeric for loop type specifier
+==================
+
+for i: number = 1, 10 do
+end
+
+---
+
+(chunk
+  (for_range_stmt
+    (binding
+      (name)
+      (namedtype
+        (name)))
+    (number)
+    (number)))
+
+==================
+Generic for loop type specifier
+==================
+
+for i: number, v: string in pairs(tbl) do
+end
+
+---
+
+(chunk
+  (for_in_stmt
+    (bindinglist
+      (binding
+        variable_name: (name)
+        type_specifier: (namedtype
+          type_name: (name)))
+      (binding
+        variable_name: (name)
+        type_specifier: (namedtype
+          type_name: (name))))
+    (explist
+      (call_stmt
+        invoked: (var
+          variable_name: (name))
+        (arglist
+          (var
+            variable_name: (name)))))))
+
+==================
+Type assertion 1 
+==================
+
+x = 5 + c :: number
+
+---
+
+(chunk
+  (assign_stmt
+    (varlist
+      (var (name)))
+    (explist
+      (binexp
+        (number)
+        (cast
+          (var (name))
+          (namedtype (name)))))))
+
+==================
+Attribute on function declaration
+==================
+
+@native
+function evenlist(n: number): {number}
+  local t = table.create(n, 0)
+  for i = 1, n do
+    local y = i * 2
+    t[i] = y
+  end
+  return t
+end
+
+---
+
+(chunk
+  (fn_stmt
+    (attribute)
+    function_name: (name)
+    (paramlist
+      (param
+        parameter_name: (name)
+        type_specifier: (namedtype
+          type_name: (name))))
+    return_type: (tbtype
+      array_type_specifier: (namedtype
+          type_name: (name)))
+    body: (block
+      (local_var_stmt
+        (bindinglist
+          (binding
+            variable_name: (name)))
+        (explist
+          (call_stmt
+            invoked: (var
+              table_name: (name)
+              (key
+                field_name: (name)))
+            (arglist
+              (var
+                variable_name: (name))
+              (number)))))
+      (for_range_stmt
+        (binding
+          variable_name: (name))
+        start: (number)
+        stop: (var
+          variable_name: (name))
+        body: (block
+          (local_var_stmt
+            (bindinglist
+              (binding
+                variable_name: (name)))
+            (explist
+              (binexp
+                left: (var
+                  variable_name: (name))
+                right: (number))))
+          (assign_stmt
+            (varlist
+              (var
+                table_name: (name)
+                (key
+                  field_indexer: (var
+                    variable_name: (name)))))
+            (explist
+              (var
+                variable_name: (name))))))
+      (ret_stmt
+        (explist
+          (var
+            variable_name: (name)))))))
+
+==================
+Parameterized attribute on a function declaration
+==================
+
+@[deprecated "Please use destroy() instead."]
+local function remove(x)
+  x.Parent = nil
+end
+
+---
+
+(chunk
+  (local_fn_stmt
+    (attribute
+      (parattr
+        attribute_name: (name)
+        (parattr_param
+          (string))))
+    function_name: (name)
+    (paramlist
+      (param
+        parameter_name: (name)))
+    body: (block
+      (assign_stmt
+        (varlist
+          (var
+            table_name: (name)
+            (key
+              field_name: (name))))
+        (explist
+          (nil))))))

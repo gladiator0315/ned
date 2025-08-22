@@ -20,6 +20,7 @@
 #include "editor_copy_paste.h"
 #include <algorithm>
 #include <iostream>
+#include "../lsp/lsp_globals.h"
 
 // Global instance
 EditorMouse gEditorMouse;

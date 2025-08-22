@@ -31,6 +31,7 @@ Description: Implementation of the embeddable NED editor wrapper.
 
 // Include global variable declarations
 #include "globals.h"
+#include "lsp/lsp_globals.h"
 
 #include <algorithm> // for std::max
 

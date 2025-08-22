@@ -14,10 +14,12 @@
 #include <thread>
 #include <unordered_map>
 #include <vector>
+#include "lsp_globals.h"
+#include "lsp_utils.h"
+
 
 using json = nlohmann::json;
 
-LSPAutocomplete gLSPAutocomplete;
 bool LSPAutocomplete::wasShowingLastFrame = false;
 
 LSPAutocomplete::LSPAutocomplete()
@@ -122,19 +124,11 @@ void LSPAutocomplete::requestCompletion(const std::string &filePath,
 {
 	int requestId = gEditorLSP.getNextRequestId();
 
-	// Add request to queue
 	{
 		std::lock_guard<std::mutex> lock(queueMutex);
 		requestQueue.push({filePath, line, character, requestId});
 	}
 	queueCondition.notify_one();
-}
-
-void LSPAutocomplete::processPendingResponses()
-{
-	// This method is called from the main thread to process any UI updates
-	// Currently empty as we're handling UI updates directly in processResponse
-	// We could move UI updates here if needed
 }
 
 bool LSPAutocomplete::shouldRender()
@@ -395,77 +389,161 @@ void LSPAutocomplete::applyStyling()
 	ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(1.0f, 0.1f, 0.7f, 0.4f));
 }
 
-void LSPAutocomplete::renderCompletionListItems()
-{
-	const int current_item_count = currentCompletionItems.size();
-	const float max_visible_items = 10.0f;
-	const float item_height = ImGui::GetTextLineHeightWithSpacing(); // Includes spacing
-	const ImGuiStyle &style = ImGui::GetStyle();
-	ImDrawList *draw_list = ImGui::GetWindowDrawList();
-
-	const ImU32 selection_color =
-		ImGui::ColorConvertFloat4ToU32(style.Colors[ImGuiCol_Header]);
-	const ImU32 text_color = ImGui::ColorConvertFloat4ToU32(style.Colors[ImGuiCol_Text]);
-
-	bool use_child_window = current_item_count > max_visible_items;
-
-	bool scroll_to_top = use_child_window && showCompletions && !wasShowingLastFrame;
-
-	bool selection_changed_by_keyboard =
-		ImGui::IsKeyPressed(ImGuiKey_UpArrow) || ImGui::IsKeyPressed(ImGuiKey_DownArrow);
-
-	if (use_child_window)
-	{
-		float child_height = max_visible_items * item_height;
-		ImGui::BeginChild("##CompletionScroll", ImVec2(350.0f, child_height), false, 0);
-		if (scroll_to_top)
-		{
-			ImGui::SetScrollY(0.0f);
-		}
-	}
-
-	for (size_t i = 0; i < currentCompletionItems.size(); ++i)
-	{
-		const auto &item = currentCompletionItems[i];
-		bool is_selected = (selectedCompletionIndex == i);
-
-		ImVec2 item_pos = ImGui::GetCursorScreenPos();
-		float item_width = ImGui::GetContentRegionAvail().x;
-		float adjusted_item_width =
-			item_width - (use_child_window ? style.ScrollbarSize : 0.0f);
-		adjusted_item_width = std::max(1.0f, adjusted_item_width);
-		ImVec2 item_rect_min = item_pos;
-		ImVec2 item_rect_max =
-			ImVec2(item_pos.x + adjusted_item_width, item_pos.y + item_height);
-
-		ImGui::Dummy(ImVec2(0.0f, item_height));
-
-		if (!ImGui::IsRectVisible(item_pos, item_rect_max))
-			continue;
-
-		if (is_selected)
-		{
-			draw_list->AddRectFilled(item_rect_min, item_rect_max, selection_color);
-		}
-
-		ImVec2 text_size = ImGui::CalcTextSize(item.insertText.c_str());
-		float text_padding_y = (item_height - text_size.y) * 0.5f;
-		text_padding_y = std::max(0.0f, text_padding_y);
-		ImVec2 text_pos = ImVec2(item_rect_min.x + style.FramePadding.x,
-								 item_rect_min.y + text_padding_y);
-		draw_list->AddText(text_pos, text_color, item.insertText.c_str());
-
-		if (is_selected && selection_changed_by_keyboard)
-		{
-			ImGui::SetScrollHereY(0.5f);
-		}
-	}
-
-	if (use_child_window)
-	{
-		ImGui::EndChild();
-	}
+void LSPAutocomplete::renderCompletionItem(const CompletionDisplayItem& item, 
+                                          bool isSelected) {
+    ImVec2 pos = ImGui::GetCursorScreenPos();
+    ImDrawList* drawList = ImGui::GetWindowDrawList();
+    const float lineHeight = ImGui::GetTextLineHeight();
+    
+    // Draw background for selected item
+    if (isSelected) {
+        ImU32 selectionColor = ImGui::GetColorU32(ImGuiCol_Header);
+        drawList->AddRectFilled(pos, ImVec2(pos.x + ImGui::GetContentRegionAvail().x, 
+                                          pos.y + lineHeight), selectionColor);
+    }
+    
+    // Draw icon based on completion kind
+    const char* icon = "?";
+    ImU32 iconColor = IM_COL32(200, 200, 200, 255);
+    
+    switch (item.kind) {
+        case 1: icon = "T"; iconColor = IM_COL32(86, 156, 214, 255); break; // Text
+        case 2: icon = "ƒ"; iconColor = IM_COL32(220, 220, 170, 255); break; // Function
+        case 3: icon = "C"; iconColor = IM_COL32(78, 201, 176, 255); break; // Constructor
+        case 4: icon = "F"; iconColor = IM_COL32(184, 215, 163, 255); break; // Field
+        case 5: icon = "V"; iconColor = IM_COL32(156, 220, 254, 255); break; // Variable
+        case 6: icon = "c"; iconColor = IM_COL32(197, 134, 192, 255); break; // Class
+        case 7: icon = "I"; iconColor = IM_COL32(86, 156, 214, 255); break; // Interface
+        default: icon = "?"; break;
+    }
+    
+    // Draw icon
+    ImVec2 iconPos(pos.x + 5, pos.y + (lineHeight - ImGui::GetTextLineHeight()) * 0.5f);
+    drawList->AddText(iconPos, iconColor, icon);
+    
+    // Draw label
+    ImVec2 textPos(pos.x + 25, pos.y + (lineHeight - ImGui::GetTextLineHeight()) * 0.5f);
+    drawList->AddText(textPos, IM_COL32(255, 255, 255, 255), item.label.c_str());
+    
+    // Draw detail (type information) if available
+    if (!item.detail.empty()) {
+        ImVec2 textSize = ImGui::CalcTextSize(item.label.c_str());
+        ImVec2 detailPos(pos.x + 30 + textSize.x + 10, 
+                        pos.y + (lineHeight - ImGui::GetTextLineHeight()) * 0.5f);
+        drawList->AddText(detailPos, IM_COL32(136, 136, 136, 255), item.detail.c_str());
+    }
+    
+    // Draw documentation tooltip on hover
+    if (ImGui::IsItemHovered() && !item.detail.empty()) {
+        ImGui::BeginTooltip();
+        ImGui::TextUnformatted(item.detail.c_str());
+        ImGui::EndTooltip();
+    }
+    
+    ImGui::Dummy(ImVec2(0, lineHeight));
 }
+
+// void LSPAutocomplete::renderCompletionListItems()
+// {
+// 	const int current_item_count = currentCompletionItems.size();
+// 	const float max_visible_items = 10.0f;
+// 	const float item_height = ImGui::GetTextLineHeightWithSpacing(); // Includes spacing
+// 	const ImGuiStyle &style = ImGui::GetStyle();
+// 	ImDrawList *draw_list = ImGui::GetWindowDrawList();
+
+// 	const ImU32 selection_color =
+// 		ImGui::ColorConvertFloat4ToU32(style.Colors[ImGuiCol_Header]);
+// 	const ImU32 text_color = ImGui::ColorConvertFloat4ToU32(style.Colors[ImGuiCol_Text]);
+
+// 	bool use_child_window = current_item_count > max_visible_items;
+
+// 	bool scroll_to_top = use_child_window && showCompletions && !wasShowingLastFrame;
+
+// 	bool selection_changed_by_keyboard =
+// 		ImGui::IsKeyPressed(ImGuiKey_UpArrow) || ImGui::IsKeyPressed(ImGuiKey_DownArrow);
+
+// 	if (use_child_window)
+// 	{
+// 		float child_height = max_visible_items * item_height;
+// 		ImGui::BeginChild("##CompletionScroll", ImVec2(350.0f, child_height), false, 0);
+// 		if (scroll_to_top)
+// 		{
+// 			ImGui::SetScrollY(0.0f);
+// 		}
+// 	}
+
+// 	for (size_t i = 0; i < currentCompletionItems.size(); ++i)
+// 	{
+// 		const auto &item = currentCompletionItems[i];
+// 		bool is_selected = (selectedCompletionIndex == i);
+
+// 		ImVec2 item_pos = ImGui::GetCursorScreenPos();
+// 		float item_width = ImGui::GetContentRegionAvail().x;
+// 		float adjusted_item_width =
+// 			item_width - (use_child_window ? style.ScrollbarSize : 0.0f);
+// 		adjusted_item_width = std::max(1.0f, adjusted_item_width);
+// 		ImVec2 item_rect_min = item_pos;
+// 		ImVec2 item_rect_max =
+// 			ImVec2(item_pos.x + adjusted_item_width, item_pos.y + item_height);
+
+// 		ImGui::Dummy(ImVec2(0.0f, item_height));
+
+// 		if (!ImGui::IsRectVisible(item_pos, item_rect_max))
+// 			continue;
+
+// 		if (is_selected)
+// 		{
+// 			draw_list->AddRectFilled(item_rect_min, item_rect_max, selection_color);
+// 		}
+
+// 		ImVec2 text_size = ImGui::CalcTextSize(item.insertText.c_str());
+// 		float text_padding_y = (item_height - text_size.y) * 0.5f;
+// 		text_padding_y = std::max(0.0f, text_padding_y);
+// 		ImVec2 text_pos = ImVec2(item_rect_min.x + style.FramePadding.x,
+// 								 item_rect_min.y + text_padding_y);
+// 		draw_list->AddText(text_pos, text_color, item.insertText.c_str());
+
+// 		if (is_selected && selection_changed_by_keyboard)
+// 		{
+// 			ImGui::SetScrollHereY(0.5f);
+// 		}
+// 	}
+
+// 	if (use_child_window)
+// 	{
+// 		ImGui::EndChild();
+// 	}
+// }
+
+void LSPAutocomplete::renderCompletionListItems() {
+    const int current_item_count = currentCompletionItems.size();
+    const float max_visible_items = 10.0f;
+    const float item_height = ImGui::GetTextLineHeightWithSpacing();
+    
+    bool use_child_window = current_item_count > max_visible_items;
+    
+    if (use_child_window) {
+        float child_height = max_visible_items * item_height;
+        ImGui::BeginChild("##CompletionScroll", ImVec2(350.0f, child_height), false, 0);
+    }
+    
+    for (size_t i = 0; i < currentCompletionItems.size(); ++i) {
+        const auto &item = currentCompletionItems[i];
+        bool is_selected = (selectedCompletionIndex == i);
+        
+        renderCompletionItem(item, is_selected);
+        
+        if (is_selected && (ImGui::IsKeyPressed(ImGuiKey_UpArrow) || 
+                           ImGui::IsKeyPressed(ImGuiKey_DownArrow))) {
+            ImGui::SetScrollHereY(0.5f);
+        }
+    }
+    
+    if (use_child_window) {
+        ImGui::EndChild();
+    }
+}
+
 bool LSPAutocomplete::handleClickOutside()
 {
 	if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) ||
@@ -544,71 +622,44 @@ void LSPAutocomplete::renderCompletions()
 	ImGui::PopStyleVar(3);
 	finalizeRenderState();
 }
+
 std::string LSPAutocomplete::formCompletionRequest(int requestId,
-												   const std::string &filePath,
-												   int line,
-												   int character)
+                                                   const std::string &filePath,
+                                                   int line,
+                                                   int character)
 {
-	// Determine trigger character and kind
-	char prev_char = '\0';
-	bool is_triggered_by_dot = false;
-	bool is_triggered_by_colon = false;
-	bool is_triggered_by_arrow = false;
+    // Figure out trigger
+    char prev_char = (editor_state.cursor_index > 0)
+                   ? editor_state.fileContent[editor_state.cursor_index - 1]
+                   : '\0';
+    int triggerKind = 1; // Invoked
+    const char* trig = nullptr;
+    if (prev_char == '.' || prev_char == ':' || prev_char == '>') {
+        triggerKind = 2;  // TriggerCharacter
+        trig = (prev_char == '.') ? "." : (prev_char == ':') ? ":" : ">";
+    }
 
-	if (editor_state.cursor_index > 0)
-	{
-		prev_char = editor_state.fileContent[editor_state.cursor_index - 1];
-		is_triggered_by_dot = (prev_char == '.');
-		is_triggered_by_colon = (prev_char == ':');
-		is_triggered_by_arrow = (prev_char == '>');
-	}
+    const std::string uri = pathToFileUri(filePath); // gives file:///D:/... with spaces as %20
 
-	// Determine trigger kind
-	int triggerKind = 1; // Invoked
-	if (is_triggered_by_dot || is_triggered_by_colon || is_triggered_by_arrow)
-	{
-		triggerKind = 2; // TriggerCharacter
-	}
+    nlohmann::json params = {
+        {"textDocument", { {"uri", uri} }},
+        {"position",     { {"line", line}, {"character", character} }},
+        {"context",      { {"triggerKind", triggerKind} }}
+    };
+    if (trig) params["context"]["triggerCharacter"] = trig;
 
-	// Determine trigger character
-	std::string triggerChar = "null";
-	if (is_triggered_by_dot)
-	{
-		triggerChar = "\".\"";
-	} else if (is_triggered_by_colon)
-	{
-		triggerChar = "\":\"";
-	} else if (is_triggered_by_arrow)
-	{
-		triggerChar = "\">\"";
-	}
+    nlohmann::json req = {
+        {"jsonrpc","2.0"},
+        {"id",     requestId},
+        {"method", "textDocument/completion"},
+        {"params", params}
+    };
 
-	return std::string(R"({
-        "jsonrpc": "2.0",
-        "id": )") +
-		   std::to_string(requestId) +
-		   R"(,
-        "method": "textDocument/completion",
-        "params": {
-            "textDocument": {
-                "uri": "file://)" +
-		   filePath + R"("
-            },
-            "position": {
-                "line": )" +
-		   std::to_string(line) + R"(,
-                "character": )" +
-		   std::to_string(character) + R"(
-            },
-            "context": {
-                "triggerKind": )" +
-		   std::to_string(triggerKind) + R"(,
-                "triggerCharacter": )" +
-		   triggerChar + R"(
-            }
-        }
-    })";
+    std::string body = req.dump();
+    std::cout << "[TX completion] " << body.substr(0, 200) << "...\n";
+    return body;
 }
+
 
 bool LSPAutocomplete::processResponse(const std::string &response, int requestId)
 {
@@ -687,277 +738,438 @@ bool LSPAutocomplete::processResponse(const std::string &response, int requestId
 		return true;
 	}
 }
+
+bool LSPAutocomplete::shouldIncludeCompletion(const CompletionDisplayItem& item, 
+                                             CompletionContext context) {
+    // Filter out editor commands and unwanted items
+    if (item.label.empty()) return false;
+    if (item.label.find("editor.action.") == 0) return false;
+    
+    // Filter out very generic single-character completions
+    if (item.label.length() == 1 && !isalpha(item.label[0])) return false;
+    
+    // Filter based on context
+    switch (context) {
+        case CompletionContext::PropertyAccess:
+            // In property context, show only methods/properties
+            return item.kind == 2 || item.kind == 5; // Functions and Variables
+            
+        case CompletionContext::FunctionCall:
+            // In function call context, prioritize functions
+            return item.kind == 2 || item.kind == 3; // Functions, Constructors
+            
+        case CompletionContext::StringMethod:
+            // For string methods, show only string-related methods
+            return item.label.find("sub") != std::string::npos ||
+                   item.label.find("find") != std::string::npos ||
+                   item.label.find("gsub") != std::string::npos ||
+                   item.label.find("match") != std::string::npos ||
+                   item.label.find("upper") != std::string::npos ||
+                   item.label.find("lower") != std::string::npos;
+    }
+    
+    return true;
+}
+
+void LSPAutocomplete::prioritizeCompletions(std::vector<CompletionDisplayItem>& items, 
+                                           CompletionContext context,
+                                           const std::string& currentWord) {
+    for (auto& item : items) {
+        std::string priorityPrefix = "Z"; // Default low priority
+        
+        // Context-based prioritization
+        switch (context) {
+            case CompletionContext::PropertyAccess:
+                if (item.kind == 2) priorityPrefix = "A"; // Functions first
+                else if (item.kind == 5) priorityPrefix = "B"; // Properties second
+                break;
+                
+            case CompletionContext::FunctionCall:
+                if (item.kind == 2) priorityPrefix = "A"; // Functions
+                else if (item.kind == 3) priorityPrefix = "B"; // Constructors
+                break;
+                
+            case CompletionContext::Global:
+                // Prioritize keywords and common patterns for Roblox development
+                if (item.label == "function" || item.label == "local" || 
+                    item.label == "game" || item.label == "workspace") {
+                    priorityPrefix = "A";
+                } else if (item.label.find("local ") == 0) {
+                    priorityPrefix = "B";
+                } else if (item.label == "print") {
+                    priorityPrefix = "C"; // Common but not highest priority
+                }
+                break;
+                
+            case CompletionContext::StringMethod:
+                // Prioritize common string methods
+                if (item.label == "sub" || item.label == "find") {
+                    priorityPrefix = "A";
+                } else if (item.label == "gsub" || item.label == "match") {
+                    priorityPrefix = "B";
+                }
+                break;
+        }
+        
+        // Exact match boost (highest priority)
+        if (!currentWord.empty()) {
+            if (item.label.substr(0, currentWord.length()) == currentWord) {
+                priorityPrefix = "!" + priorityPrefix; // Exact match
+            } else {
+                // Case-insensitive prefix match
+                std::string labelLower = item.label;
+                std::transform(labelLower.begin(), labelLower.end(), labelLower.begin(), ::tolower);
+                std::string currentWordLower = currentWord;
+                std::transform(currentWordLower.begin(), currentWordLower.end(), currentWordLower.begin(), ::tolower);
+                
+                if (labelLower.substr(0, currentWordLower.length()) == currentWordLower) {
+                    priorityPrefix = "@" + priorityPrefix; // Case-insensitive match
+                }
+            }
+        }
+        
+        item.sortText = priorityPrefix + item.sortText;
+    }
+}
+
+//Clean up snippet formatting
+std::string LSPAutocomplete::cleanSnippetFormatting(const std::string& text) {
+    std::string result = text;
+
+    // --- existing placeholder cleanup (your loop) ---
+    size_t pos = 0;
+    while ((pos = result.find("$", pos)) != std::string::npos) {
+        if (pos + 1 < result.size()) {
+            if (result[pos + 1] == '{') {
+                size_t end = result.find("}", pos);
+                if (end != std::string::npos) {
+                    size_t colon = result.find(":", pos);
+                    if (colon != std::string::npos && colon < end) {
+                        std::string defaultValue = result.substr(colon + 1, end - colon - 1);
+                        result.replace(pos, end - pos + 1, defaultValue);
+                    } else {
+                        result.erase(pos, end - pos + 1);
+                    }
+                } else {
+                    result.erase(pos, 2);
+                }
+            } else if (isdigit(result[pos + 1])) {
+                size_t end = pos + 1;
+                while (end < result.size() && isdigit(result[end])) end++;
+                result.erase(pos, end - pos);
+            } else if (result[pos + 1] == '(') {
+                size_t end = result.find(")", pos);
+                if (end != std::string::npos) result.erase(pos, end - pos + 1);
+                else result.erase(pos, 2);
+            } else {
+                pos++;
+            }
+        } else break;
+    }
+
+    // --- enforce "open paren only" for function snippets like print() / GetService() ---
+    size_t openPos = result.find('(');
+    if (openPos != std::string::npos) {
+        // keep everything through '(' and drop everything after it
+        result = result.substr(0, openPos + 1);
+    }
+
+    return result;
+}
+
 void LSPAutocomplete::parseCompletionResult(const json &result,
-											int requestLine,
-											int requestCharacter)
-{
-	std::vector<json> items_json;
-	bool is_incomplete = false;
+                                            int requestLine,
+                                            int requestCharacter) {
+    std::vector<json> items_json;
+    bool is_incomplete = false;
 
-	if (result.is_array())
-	{
-		items_json = result.get<std::vector<json>>();
-	} else if (result.is_object())
-	{
-		if (result.contains("items") && result["items"].is_array())
-		{
-			items_json = result["items"].get<std::vector<json>>();
-		}
-		is_incomplete = result.value("isIncomplete", false);
-	} else if (result.is_null())
-	{
-		std::cout << "\033[33mLSP Autocomplete:\033[0m No completions found "
-					 "(result is null)."
-				  << std::endl;
-		currentCompletionItems.clear();
-		showCompletions = false;
-		return;
-	} else
-	{
-		std::cout << "\033[31mLSP Autocomplete:\033[0m Unexpected result format: "
-				  << result.type_name() << std::endl;
-		currentCompletionItems.clear();
-		showCompletions = false;
-		return;
-	}
+    if (result.is_array()) {
+        items_json = result.get<std::vector<json>>();
+    } else if (result.is_object()) {
+        if (result.contains("items") && result["items"].is_array()) {
+            items_json = result["items"].get<std::vector<json>>();
+        }
+        is_incomplete = result.value("isIncomplete", false);
+    } else if (result.is_null()) {
+        std::cout << "\033[33mLSP Autocomplete:\033[0m No completions found "
+                     "(result is null)."
+                  << std::endl;
+        currentCompletionItems.clear();
+        showCompletions = false;
+        return;
+    } else {
+        std::cout << "\033[31mLSP Autocomplete:\033[0m Unexpected result format: "
+                  << result.type_name() << std::endl;
+        currentCompletionItems.clear();
+        showCompletions = false;
+        return;
+    }
 
-	std::cout << "\033[32mFound " << items_json.size() << " completions"
-			  << (is_incomplete ? " (incomplete list)" : "") << ":\033[0m" << std::endl;
+    std::cout << "\033[32mFound " << items_json.size() << " completions"
+              << (is_incomplete ? " (incomplete list)" : "") << ":\033[0m" << std::endl;
 
-	// Use the original request coordinates that were sent to server
-	int currentLine = requestLine;
-	int currentChar = requestCharacter;
+    // Use the original request coordinates that were sent to server
+    int currentLine = requestLine;
+    int currentChar = requestCharacter;
 
-	// Calculate the original cursor position when the request was made
-	int request_cursor_pos = -1;
-	if (currentLine >= 0 && currentLine < editor_state.editor_content_lines.size())
-	{
-		int line_start = editor_state.editor_content_lines[currentLine];
-		request_cursor_pos = line_start + currentChar;
+    // Calculate the original cursor position when the request was made
+    int request_cursor_pos = -1;
+    if (currentLine >= 0 && currentLine < editor_state.editor_content_lines.size()) {
+        int line_start = editor_state.editor_content_lines[currentLine];
+        request_cursor_pos = line_start + currentChar;
 
-		// Bounds check to ensure we don't exceed file content
-		if (request_cursor_pos < 0 || request_cursor_pos > editor_state.fileContent.size())
-		{
-			request_cursor_pos = editor_state.cursor_index;
-			auto [line, character] = getLineAndCharFromIndex(request_cursor_pos);
-			currentLine = line;
-			currentChar = character;
-		}
-	} else
-	{
-		// Fallback to current cursor if coordinates are invalid
-		request_cursor_pos = editor_state.cursor_index;
-		auto [line, character] = getLineAndCharFromIndex(request_cursor_pos);
-		currentLine = line;
-		currentChar = character;
-	}
+        // Bounds check to ensure we don't exceed file content
+        if (request_cursor_pos < 0 || request_cursor_pos > editor_state.fileContent.size()) {
+            request_cursor_pos = editor_state.cursor_index;
+            auto [line, character] = getLineAndCharFromIndex(request_cursor_pos);
+            currentLine = line;
+            currentChar = character;
+        }
+    } else {
+        // Fallback to current cursor if coordinates are invalid
+        request_cursor_pos = editor_state.cursor_index;
+        auto [line, character] = getLineAndCharFromIndex(request_cursor_pos);
+        currentLine = line;
+        currentChar = character;
+    }
 
-	// Find the start of the current word for filtering purposes
-	std::string currentWord;
-	int word_start = request_cursor_pos;
+    // Find the start of the current word for filtering purposes
+    std::string currentWord;
+    int word_start = request_cursor_pos;
 
-	// Smart word boundary detection for property access
-	// First, check if we're in a property access context (has a dot before cursor)
-	bool isPropertyAccess = false;
-	int lastDotPos = -1;
+    // Smart word boundary detection for property access
+    bool isPropertyAccess = false;
+    int lastAccessorPos = -1;
 
-	// Look backwards to find the last dot
-	for (int i = request_cursor_pos - 1; i >= 0; i--)
-	{
-		char c = editor_state.fileContent[i];
-		if (c == '.')
-		{
-			lastDotPos = i;
-			isPropertyAccess = true;
-			break;
-		}
-		// Stop if we hit a space, newline, or other non-identifier character
-		if (!isalnum(c) && c != '_')
-		{
-			break;
-		}
-	}
+    // Look backwards to find the last '.' or ':'
+    for (int i = request_cursor_pos - 1; i >= 0; i--) {
+        char c = editor_state.fileContent[i];
+        if (c == '.' || c == ':') {
+            lastAccessorPos = i;
+            isPropertyAccess = true;
+            break;
+        }
+        if (!isalnum(c) && c != '_') break; // stop on non-identifier
+    }
 
-	if (isPropertyAccess && lastDotPos != -1)
-	{
-		// For property access, word starts after the last dot
-		word_start = lastDotPos + 1;
-	} else
-	{
-		// Normal word boundary detection
-		const std::string additionalWordChars =
-			":$#@"; // Removed . for better property handling
+    if (isPropertyAccess && lastAccessorPos != -1) {
+        // word starts after the last accessor
+        word_start = lastAccessorPos + 1;
+    } else {
+        const std::string additionalWordChars = ":$#@";
+        while (word_start > 0) {
+            char c = editor_state.fileContent[word_start - 1];
+            if (!(isalnum(c) || c == '_' || additionalWordChars.find(c) != std::string::npos))
+                break;
+            word_start--;
+        }
+    }
 
-		while (word_start > 0)
-		{
-			char c = editor_state.fileContent[word_start - 1];
-			// Include characters that are typically part of identifiers
-			if (!(isalnum(c) || c == '_' ||
-				  additionalWordChars.find(c) != std::string::npos))
-				break;
-			word_start--;
-		}
-	}
+    if (word_start < request_cursor_pos && word_start >= 0 &&
+        request_cursor_pos <= editor_state.fileContent.size()) {
+        currentWord =
+            editor_state.fileContent.substr(word_start, request_cursor_pos - word_start);
+    }
 
-	if (word_start < request_cursor_pos && word_start >= 0 &&
-		request_cursor_pos <= editor_state.fileContent.size())
-	{
-		currentWord =
-			editor_state.fileContent.substr(word_start, request_cursor_pos - word_start);
-	}
+    // Detect completion context
+    CompletionContext context = detectCompletionContext(request_cursor_pos);
+    
+    // Debug output for context detection
+    const char* contextNames[] = {"Global", "PropertyAccess", "FunctionCall", 
+                                 "TableAccess", "StringMethod", "Unknown"};
+    std::cout << "Completion context: " << contextNames[static_cast<int>(context)] 
+              << ", current word: '" << currentWord << "'" << std::endl;
 
-	// Use a map to deduplicate completions while preserving the best one
-	std::unordered_map<std::string, CompletionDisplayItem> uniqueItems;
+    // Use a map to deduplicate completions while preserving the best one
+    std::unordered_map<std::string, CompletionDisplayItem> uniqueItems;
 
-	for (const auto &item_json : items_json)
-	{
-		CompletionDisplayItem newItem;
-		newItem.label = item_json.value("label", "[No Label]");
-		newItem.detail = item_json.value("detail", "");
-		newItem.kind = item_json.value("kind", 0);
-		newItem.startLine = -1;
-		newItem.startChar = -1;
-		newItem.endLine = -1;
-		newItem.endChar = -1;
+    for (const auto &item_json : items_json) {
+        CompletionDisplayItem newItem;
+        newItem.label = item_json.value("label", "[No Label]");
+        newItem.detail = item_json.value("detail", "");
+        newItem.kind = item_json.value("kind", 0);
+        newItem.startLine = -1;
+        newItem.startChar = -1;
+        newItem.endLine = -1;
+        newItem.endChar = -1;
 
-		// Use server's sortText if available
-		newItem.sortText = item_json.value("sortText", newItem.label);
+        // Use server's sortText if available
+        newItem.sortText = item_json.value("sortText", newItem.label);
 
-		// Create a unique key that preserves important distinctions
-		std::string uniqueKey = newItem.label + "|" + std::to_string(newItem.kind);
+        // Create a unique key that preserves important distinctions
+        std::string uniqueKey = newItem.label + "|" + std::to_string(newItem.kind);
 
-		// Only replace if we have a better sortText
-		auto it = uniqueItems.find(uniqueKey);
-		if (it == uniqueItems.end() || newItem.sortText < it->second.sortText)
-		{
-			bool hasTextEdit = false;
-			std::string positionInfo;
+        // Only replace if we have a better sortText
+        auto it = uniqueItems.find(uniqueKey);
+        if (it == uniqueItems.end() || newItem.sortText < it->second.sortText) {
+            bool hasTextEdit = false;
 
-			// Reduced debug output
+            // First try to get textEdit data
+            if (item_json.contains("textEdit") && item_json["textEdit"].is_object()) {
+                const auto &textEdit = item_json["textEdit"];
+                if (textEdit.contains("newText") && textEdit["newText"].is_string()) {
+                    newItem.insertText = textEdit["newText"].get<std::string>();
+					newItem.insertText = cleanSnippetFormatting(newItem.insertText);
 
-			// First try to get textEdit data
-			if (item_json.contains("textEdit") && item_json["textEdit"].is_object())
-			{
-				const auto &textEdit = item_json["textEdit"];
-				if (textEdit.contains("newText") && textEdit["newText"].is_string())
-				{
-					newItem.insertText = textEdit["newText"].get<std::string>();
+                    if (textEdit.contains("range") && textEdit["range"].is_object()) {
+                        const auto &range = textEdit["range"];
+                        if (range.contains("start") && range["start"].is_object() &&
+                            range.contains("end") && range["end"].is_object()) {
+                            const auto &start = range["start"];
+                            const auto &end = range["end"];
 
-					if (textEdit.contains("range") && textEdit["range"].is_object())
-					{
-						const auto &range = textEdit["range"];
-						if (range.contains("start") && range["start"].is_object() &&
-							range.contains("end") && range["end"].is_object())
-						{
-							const auto &start = range["start"];
-							const auto &end = range["end"];
+                            newItem.startLine = start.value("line", -1);
+                            newItem.startChar = start.value("character", -1);
+                            newItem.endLine = end.value("line", -1);
+                            newItem.endChar = end.value("character", -1);
+                        }
+                    }
+                    hasTextEdit = true;
+                }
+            }
 
-							newItem.startLine = start.value("line", -1);
-							newItem.startChar = start.value("character", -1);
-							newItem.endLine = end.value("line", -1);
-							newItem.endChar = end.value("character", -1);
 
-							// Debug removed for performance
-						}
-					}
-					hasTextEdit = true;
-				}
-			} else
-			{
-				// No textEdit found
-			}
+            // If no textEdit OR textEdit has invalid coordinates, use server coordinates
+            if (!hasTextEdit || newItem.startLine == -1 || newItem.startChar == -1 ||
+                newItem.endLine == -1 || newItem.endChar == -1) {
+                // According to LSP spec, when no textEdit is provided, the
+                // completion replaces from the start of the current word to the
+                // cursor position
+                auto [wordStartLine, wordStartChar] = getLineAndCharFromIndex(word_start);
 
-			// If no textEdit OR textEdit has invalid coordinates, use server
-			// coordinates and LSP standard behavior
-			if (!hasTextEdit || newItem.startLine == -1 || newItem.startChar == -1 ||
-				newItem.endLine == -1 || newItem.endChar == -1)
-			{
-				// According to LSP spec, when no textEdit is provided, the
-				// completion replaces from the start of the current word to the
-				// cursor position
-				auto [wordStartLine, wordStartChar] = getLineAndCharFromIndex(word_start);
+                newItem.startLine = wordStartLine;
+                newItem.startChar = wordStartChar;
+                newItem.endLine = currentLine;
+                newItem.endChar = currentChar;
 
-				newItem.startLine = wordStartLine;
-				newItem.startChar = wordStartChar;
-				newItem.endLine = currentLine;
-				newItem.endChar = currentChar;
+                // Get insert text from either insertText or label
+                if (item_json.contains("insertText") &&
+                    item_json["insertText"].is_string()) {
+                    newItem.insertText = item_json["insertText"].get<std::string>();
+					newItem.insertText = cleanSnippetFormatting(newItem.insertText);
+                } else {
+					newItem.insertText = cleanSnippetFormatting(newItem.insertText);
+                    newItem.insertText = newItem.label;
+                }
+            }
 
-				// Using calculated word boundaries
+            // Apply context-aware filtering
+            if (shouldIncludeCompletion(newItem, context)) {
+                // Apply prioritization scoring
+                std::string priorityPrefix = "Z"; // Default low priority
+                
+                // Context-based prioritization
+                switch (context) {
+                    case CompletionContext::PropertyAccess:
+                        if (newItem.kind == 2) priorityPrefix = "A"; // Functions first
+                        else if (newItem.kind == 5) priorityPrefix = "B"; // Properties second
+                        break;
+                        
+                    case CompletionContext::FunctionCall:
+                        if (newItem.kind == 2) priorityPrefix = "A"; // Functions
+                        else if (newItem.kind == 3) priorityPrefix = "B"; // Constructors
+                        break;
+                        
+                    case CompletionContext::Global:
+                        // Prioritize keywords and common patterns for Roblox
+                        if (newItem.label == "function" || newItem.label == "local" || 
+                            newItem.label == "game" || newItem.label == "workspace") {
+                            priorityPrefix = "A";
+                        } else if (newItem.label.find("local ") == 0) {
+                            priorityPrefix = "B";
+                        } else if (newItem.label == "print") {
+                            priorityPrefix = "C";
+                        }
+                        break;
+                        
+                    case CompletionContext::StringMethod:
+                        // Prioritize common string methods
+                        if (newItem.label == "sub" || newItem.label == "find") {
+                            priorityPrefix = "A";
+                        } else if (newItem.label == "gsub" || newItem.label == "match") {
+                            priorityPrefix = "B";
+                        }
+                        break;
+                        
+                    default:
+                        break;
+                }
+                
+                // Exact match boost (highest priority)
+                if (!currentWord.empty()) {
+                    if (newItem.label.substr(0, currentWord.length()) == currentWord) {
+                        priorityPrefix = "!" + priorityPrefix; // Exact match
+                    } else {
+                        // Case-insensitive prefix match
+                        std::string labelLower = newItem.label;
+                        std::transform(labelLower.begin(), labelLower.end(), labelLower.begin(), ::tolower);
+                        std::string currentWordLower = currentWord;
+                        std::transform(currentWordLower.begin(), currentWordLower.end(), currentWordLower.begin(), ::tolower);
+                        
+                        if (labelLower.substr(0, currentWordLower.length()) == currentWordLower) {
+                            priorityPrefix = "@" + priorityPrefix; // Case-insensitive match
+                        } else if (labelLower.find(currentWordLower) != std::string::npos) {
+                            priorityPrefix = "#" + priorityPrefix; // Contains match
+                        }
+                    }
+                }
+                
+                newItem.sortText = priorityPrefix + newItem.sortText;
+                uniqueItems[uniqueKey] = newItem;
+            }
+        }
+    }
 
-				// Get insert text from either insertText or label
-				if (item_json.contains("insertText") &&
-					item_json["insertText"].is_string())
-				{
-					newItem.insertText = item_json["insertText"].get<std::string>();
-				} else
-				{
-					newItem.insertText = newItem.label;
-				}
-			}
+    // Convert map to vector
+    currentCompletionItems.clear();
+    currentCompletionItems.reserve(uniqueItems.size());
+    for (const auto &pair : uniqueItems) {
+        currentCompletionItems.push_back(pair.second);
+    }
 
-			// Universal relevance boosting based on prefix match
-			if (!currentWord.empty())
-			{
-				const std::string &label = newItem.label;
-				std::string labelLower = label;
-				std::transform(
-					labelLower.begin(), labelLower.end(), labelLower.begin(), ::tolower);
-				std::string currentWordLower = currentWord;
-				std::transform(currentWordLower.begin(),
-							   currentWordLower.end(),
-							   currentWordLower.begin(),
-							   ::tolower);
+    // Sort completions using our enhanced sortText
+    std::sort(currentCompletionItems.begin(),
+              currentCompletionItems.end(),
+              [](const CompletionDisplayItem &a, const CompletionDisplayItem &b) {
+                  return a.sortText < b.sortText;
+              });
 
-				// Tier 1: Exact prefix match (case-sensitive)
-				if (label.length() >= currentWord.length() &&
-					label.substr(0, currentWord.length()) == currentWord)
-				{
-					newItem.sortText =
-						" " + newItem.sortText; // Space sorts before alphanumeric
-				}
-				// Tier 2: Case-insensitive prefix match
-				else if (labelLower.length() >= currentWordLower.length() &&
-						 labelLower.substr(0, currentWordLower.length()) ==
-							 currentWordLower)
-				{
-					newItem.sortText = "!" + newItem.sortText; // ! sorts after space
-				}
-				// Tier 3: Contains match (case-insensitive)
-				else if (labelLower.find(currentWordLower) != std::string::npos)
-				{
-					newItem.sortText = "~" + newItem.sortText; // ~ sorts after !
-				}
-			}
+    // Limit to top items for performance and usability
+    const size_t MAX_COMPLETIONS = 25;
+    if (currentCompletionItems.size() > MAX_COMPLETIONS) {
+        currentCompletionItems.resize(MAX_COMPLETIONS);
+    }
 
-			uniqueItems[uniqueKey] = newItem;
-		}
-	}
+    // Debug output for filtered results
+    std::cout << "Filtered to " << currentCompletionItems.size() << " relevant completions:" << std::endl;
+    for (size_t i = 0; i < std::min(currentCompletionItems.size(), size_t(5)); ++i) {
+        const auto& item = currentCompletionItems[i];
+        std::cout << "  " << item.sortText << " - " << item.label 
+                  << " (kind: " << item.kind << ")" << std::endl;
+    }
+    if (currentCompletionItems.size() > 5) {
+        std::cout << "  ... and " << (currentCompletionItems.size() - 5) << " more" << std::endl;
+    }
 
-	// Convert map to vector
-	currentCompletionItems.clear();
-	currentCompletionItems.reserve(uniqueItems.size());
-	for (const auto &pair : uniqueItems)
-	{
-		currentCompletionItems.push_back(pair.second);
-	}
-
-	// Sort completions using our universal sortText
-	std::sort(currentCompletionItems.begin(),
-			  currentCompletionItems.end(),
-			  [](const CompletionDisplayItem &a, const CompletionDisplayItem &b) {
-				  return a.sortText < b.sortText;
-			  });
-
-	// Update UI state
-	if (!currentCompletionItems.empty())
-	{
-		updatePopupPosition();
-		showCompletions = true;
-		selectedCompletionIndex = 0;
-	} else
-	{
-		showCompletions = false;
-	}
+    // Update UI state
+    if (!currentCompletionItems.empty()) {
+        updatePopupPosition();
+        showCompletions = true;
+        selectedCompletionIndex = 0;
+        
+        // Auto-select the best match if we have an exact prefix match
+        if (!currentWord.empty()) {
+            for (size_t i = 0; i < currentCompletionItems.size(); ++i) {
+                const auto& item = currentCompletionItems[i];
+                if (item.label.substr(0, currentWord.length()) == currentWord) {
+                    selectedCompletionIndex = i;
+                    break;
+                }
+            }
+        }
+    } else {
+        showCompletions = false;
+    }
 }
 
 void LSPAutocomplete::resetPopupPosition()

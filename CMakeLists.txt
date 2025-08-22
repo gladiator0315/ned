@@ -137,6 +137,16 @@ target_include_directories(tree-sitter-tsx-grammar PRIVATE
 )
 list(APPEND TS_GRAMMAR_LIBS tree-sitter-tsx-grammar)
 
+# Luau grammar (manual add, since structure differs)
+add_library(tree-sitter-luau-grammar STATIC
+  lib/tree-sitter-luau/src/parser.c
+  lib/tree-sitter-luau/src/scanner.c
+)
+target_include_directories(tree-sitter-luau-grammar PRIVATE
+  lib/tree-sitter-luau/src
+)
+list(APPEND TS_GRAMMAR_LIBS tree-sitter-luau-grammar)
+
 # Other grammars with standard structure
 file(GLOB TS_GRAMMAR_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/lib/tree-sitter-*")
 foreach(TS_DIR ${TS_GRAMMAR_DIRS})
@@ -144,6 +154,9 @@ foreach(TS_DIR ${TS_GRAMMAR_DIRS})
   
   # Skip already added TypeScript grammars
   if(${LANG} MATCHES "typescript")
+    continue()
+  endif()
+  if(${LANG} MATCHES "luau")
     continue()
   endif()
 
@@ -188,8 +201,17 @@ if(NED_USE_LSP_STUBS)
     lsp/lsp_stubs_windows.cpp
   )
 else()
-  file(GLOB_RECURSE LSP_SOURCES "lsp/*.cpp")
-  list(REMOVE_ITEM LSP_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/lsp/lsp_stubs_windows.cpp")
+  set(LSP_SOURCES
+      lsp/lsp.cpp              # EditorLSP implementation
+      lsp/lsp_manager.cpp      # LSPManager + gLSPManager
+      lsp/lsp_globals.cpp      # defines gEditorLSP, gLSPAutocomplete, etc.
+      lsp/lsp_autocomplete.cpp
+      lsp/lsp_goto_def.cpp
+      lsp/lsp_goto_ref.cpp
+      lsp/lsp_symbol_info.cpp
+      lsp/lsp_adapter_luau.cpp
+  )
+  list(REMOVE_ITEM LSP_SOURCES lsp/lsp_stubs_windows.cpp)
 endif()
 
 file(GLOB_RECURSE AI_SOURCES        "ai/*.cpp")
@@ -260,33 +282,61 @@ add_dependencies(ned_util libgit2 util)
 # ================
 # Main Executable (only in standalone mode)
 # ================
-# Add Windows resource file
-if(WIN32)
-  set(WINDOWS_RESOURCES ned.rc)
-endif()
+if(CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)
 
-# Force ned executable to be built
-add_executable(ned
-  globals.cpp
-  ${APP_SOURCES}
-  ${EDITOR_SOURCES}
-  ${LSP_SOURCES}
-  ${AI_SOURCES}
-  ${AI_MM_SOURCES}
-  ${FILES_SOURCES}
-  ${IMGUI_SOURCES}
-  ${WINDOWS_RESOURCES}
-)
+  # Add Windows resource file
+  if(WIN32)
+    set(WINDOWS_RESOURCES ned.rc)
+  endif()
 
-if (WIN32)
-  add_custom_command(TARGET ned POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E make_directory
-            "$<TARGET_FILE_DIR:ned>/servers/luau-lsp/current/win-x64"
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${CMAKE_SOURCE_DIR}/servers/luau-lsp/current/win-x64/luau-lsp.exe"
-            "$<TARGET_FILE_DIR:ned>/servers/luau-lsp/current/win-x64/luau-lsp.exe"
+  add_executable(ned
+    globals.cpp
+    ${APP_SOURCES}
+    ${EDITOR_SOURCES}
+    ${LSP_SOURCES}
+    ${AI_SOURCES}
+    ${AI_MM_SOURCES}
+    ${FILES_SOURCES}
+    ${IMGUI_SOURCES}
+    ${WINDOWS_RESOURCES}
   )
-endif()
+
+  if (WIN32)
+    add_custom_command(TARGET ned POST_BUILD
+      COMMAND ${CMAKE_COMMAND} -E make_directory
+              "$<TARGET_FILE_DIR:ned>/servers/luau-lsp/current/win-x64"
+      COMMAND ${CMAKE_COMMAND} -E copy_if_different
+              "${CMAKE_SOURCE_DIR}/servers/luau-lsp/current/win-x64/luau-lsp.exe"
+              "$<TARGET_FILE_DIR:ned>/servers/luau-lsp/current/win-x64/luau-lsp.exe"
+    )
+    target_link_libraries(ned PRIVATE
+      winhttp secur32 crypt32 rpcrt4 ws2_32
+      advapi32 shell32 ole32 oleaut32 user32 comdlg32
+    )
+  endif()
+
+  if(APPLE)
+    target_link_libraries(ned PRIVATE
+      "-framework Cocoa" "-framework CoreServices" "-framework QuartzCore"
+      "-framework IOKit" "-framework CoreVideo" "-framework OpenGL"
+      "-framework Security" "-framework GSS" "-framework CoreFoundation"
+    )
+  endif()
+
+  # Standalone-only include dirs for 'ned'
+  target_include_directories(ned PRIVATE
+    ${IMGUI_INCLUDE_DIRS}
+    ${NFD_DIR}/src ${NFD_DIR}/src/include
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    editor files ai ai/mcp
+    ${CMAKE_BINARY_DIR}
+    lib/tree-sitter/lib/include lib/tree-sitter/lib/src
+    lib/utfcpp/source lib/libgit2/include
+    ${GLFW_INCLUDE_DIR}
+  )
+
+endif()  # standalone guard
+
 
 # ================
 # Embeddable Library
@@ -344,8 +394,8 @@ if(CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)
     ai
     ai/mcp
     ${CMAKE_BINARY_DIR}
-    $<TARGET_PROPERTY:GLEW::GLEW,INTERFACE_INCLUDE_DIRECTORIES>
-    $<TARGET_PROPERTY:Freetype::Freetype,INTERFACE_INCLUDE_DIRECTORIES>
+    # $<TARGET_PROPERTY:GLEW::GLEW,INTERFACE_INCLUDE_DIRECTORIES>
+    # $<TARGET_PROPERTY:Freetype::Freetype,INTERFACE_INCLUDE_DIRECTORIES>
     lib/tree-sitter/lib/include
     lib/tree-sitter/lib/src
     lib/utfcpp/source
@@ -364,8 +414,8 @@ target_include_directories(ned_embed PUBLIC
   ai
   ai/mcp
   ${CMAKE_BINARY_DIR}
-  $<TARGET_PROPERTY:GLEW::GLEW,INTERFACE_INCLUDE_DIRECTORIES>
-  $<TARGET_PROPERTY:Freetype::Freetype,INTERFACE_INCLUDE_DIRECTORIES>
+  # $<TARGET_PROPERTY:GLEW::GLEW,INTERFACE_INCLUDE_DIRECTORIES>
+  # $<TARGET_PROPERTY:Freetype::Freetype,INTERFACE_INCLUDE_DIRECTORIES>
   lib/tree-sitter/lib/include
   lib/tree-sitter/lib/src
   lib/utfcpp/source
@@ -377,6 +427,7 @@ target_include_directories(ned_embed PUBLIC
 # Linking
 # ================
 # Force standalone linking
+if(TARGET ned)
 target_link_libraries(ned PRIVATE
   ${OPENGL_LIBRARIES}
   glfw
@@ -384,7 +435,7 @@ target_link_libraries(ned PRIVATE
   ned_util
   GLEW::GLEW
   Freetype::Freetype
-  CURL::libcurl 
+  CURL::libcurl
   tree-sitter-lib
   ${TS_GRAMMAR_LIBS}
   libgit2
@@ -403,6 +454,7 @@ target_link_libraries(ned PRIVATE
   $<$<PLATFORM_ID:Linux>:rt>
 )
 add_dependencies(ned libgit2 util llhttp xdiff)
+endif()
 
 if(CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)
   # Standalone: link to our own ImGui, FreeType, GLEW, etc.
@@ -477,7 +529,7 @@ if(APPLE AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)
   )
 endif()
 
-if(WIN32 AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)
+if(WIN32 AND TARGET ned AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)
   target_link_libraries(ned PRIVATE
     winhttp
     secur32
@@ -514,5 +566,5 @@ file(COPY
   DESTINATION ${CMAKE_BINARY_DIR}
 )
 
-install(TARGETS ned RUNTIME DESTINATION .)
+# install(TARGETS ned_embed RUNTIME DESTINATION .)
 install(DIRECTORY ${CMAKE_SOURCE_DIR}/servers/ DESTINATION servers)

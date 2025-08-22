@@ -12,6 +12,7 @@
 #include <sstream>
 #include <thread>
 
+#include "../lsp/lsp_globals.h"
 #include "../editor/editor_highlight.h"
 #include "../editor/editor_line_jump.h"
 #include "../lib/json.hpp"
@@ -197,6 +198,11 @@ void FileExplorer::openFolderDialog()
 	if (result == NFD_OKAY)
 	{
 		selectedFolder = outPath;
+
+		// LSP: initialize workspace root for Luau LSP
+		gEditorLSP.initialize(selectedFolder);
+
+		
 		std::cout << "\033[35mFiles:\033[0m Selected folder: " << outPath << std::endl;
 
 		free(outPath);
@@ -246,6 +252,11 @@ void FileExplorer::openFolderDialog()
 
 						// Update tracking
 						_fileMonitor.addFileToMonitoring(currentFile);
+
+						// LSP: external reload -> bump version and notify
+						int &version = _documentVersions[currentFile];
+						version = (version == 0) ? 1 : (version + 1);
+						gEditorLSP.didChange(currentFile, version);
 
 						gSettings.renderNotification("File Modified", 2.0f);
 					} else
@@ -412,6 +423,10 @@ void FileExplorer::updateFileColorBuffer()
 void FileExplorer::updateFilePathStates(const std::string &path)
 {
 	currentFile = path;
+	// LSP: close previous open document so server can release it
+	if (!currentOpenFile.empty() && currentOpenFile != path) {
+		gEditorLSP.didClose(currentOpenFile);
+	}
 	if (currentOpenFile != path)
 	{
 		previousOpenFile = currentOpenFile;
@@ -532,6 +547,30 @@ void FileExplorer::renderFileContent()
 
 	bool text_changed;
 	renderEditor(text_changed);
+
+	// LSP: debounced didChange while editing
+	{
+		static auto lastSent = std::chrono::steady_clock::now();
+		static std::string lastContent;
+		
+		if (!currentFile.empty() && _unsavedChanges) {
+			auto now = std::chrono::steady_clock::now();
+			auto ms  = std::chrono::duration_cast<std::chrono::milliseconds>(now - lastSent).count();
+			
+			// Only send if content actually changed and enough time passed
+			if (ms >= 150 && editor_state.fileContent != lastContent) {
+				int &version = _documentVersions[currentFile];
+				version = version == 0 ? 1 : version + 1;
+				
+				// Only send if LSP is properly initialized
+				if (gLSPManager.isInitialized() && gLSPManager.hasWorkingAdapter()) {
+					gEditorLSP.didChange(currentFile, version);
+					lastSent = now;
+					lastContent = editor_state.fileContent;
+				}
+			}
+		}
+	}
 
 	// Process debounced undo states
 	if (currentUndoManager)
@@ -858,6 +897,9 @@ void FileExplorer::saveCurrentFile()
 			int &version = _documentVersions[currentFile];
 			version = version == 0 ? 1 : version + 1;
 
+			// Notify LSP that we saved the document
+			gEditorLSP.didSave(currentFile, version);
+
 			// Update tracking and refresh the file's stored state to prevent false
 			// external change detection
 			_fileMonitor.addFileToMonitoring(currentFile);
@@ -925,6 +967,9 @@ void FileExplorer::reloadCurrentFile()
 		_fileMonitor.addFileToMonitoring(currentFile);
 
 		gSettings.renderNotification("File reloaded successfully", 2.0f);
+		int &version = _documentVersions[currentFile];
+		version = (version == 0) ? 1 : (version + 1);
+		gEditorLSP.didChange(currentFile, version);
 	} else
 	{
 		gSettings.renderNotification("Failed to reload file", 3.0f);

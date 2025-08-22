@@ -53,6 +53,3 @@ class LSPGotoDef
 	bool showDefinitionOptions = false;
 	bool isEmbedded = false;
 };
-
-// Global instance (remains the same)
-extern LSPGotoDef gLSPGotoDef;

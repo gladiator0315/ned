@@ -49,6 +49,3 @@ class LSPGotoRef
 	bool showReferenceOptions = false;
 	bool isEmbedded = false;
 };
-
-// Global instance
-extern LSPGotoRef gLSPGotoRef;

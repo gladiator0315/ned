@@ -37,6 +37,7 @@
 #include <algorithm>
 #include <iostream>
 #include <set>
+#include "../lsp/lsp_globals.h"
 
 // Global instance
 EditorKeyboard gEditorKeyboard;
@@ -247,242 +248,224 @@ void EditorKeyboard::handleBackspaceKey()
 	editor_state.multi_selections.clear();
 }
 
+inline std::string WcharToUtf8(ImWchar wc)
+{
+    char buf[5] = {0};
+    if (wc == 0) return {};
+
+    if (wc < 0x80) {
+        buf[0] = (char)wc;
+        return std::string(buf, 1);
+    }
+    if (wc < 0x800) {
+        buf[0] = (char)(0xC0 + (wc >> 6));
+        buf[1] = (char)(0x80 + (wc & 0x3F));
+        return std::string(buf, 2);
+    }
+    if (wc < 0x10000) {
+        if (wc >= 0xD800 && wc <= 0xDFFF)
+            return {};
+
+        buf[0] = (char)(0xE0 + (wc >> 12));
+        buf[1] = (char)(0x80 + ((wc >> 6) & 0x3F));
+        buf[2] = (char)(0x80 + (wc & 0x3F));
+        return std::string(buf, 3);
+    }
+    if (wc <= 0x10FFFF) {
+        buf[0] = (char)(0xF0 + (wc >> 18));
+        buf[1] = (char)(0x80 + ((wc >> 12) & 0x3F));
+        buf[2] = (char)(0x80 + ((wc >> 6) & 0x3F));
+        buf[3] = (char)(0x80 + (wc & 0x3F));
+        return std::string(buf, 4);
+    }
+    return {};
+}
+
 void EditorKeyboard::handleCharacterInput()
 {
-	ImGuiIO &io = ImGui::GetIO();
-	std::string inputText; // Renamed from 'input' to avoid conflict if 'input'
-						   // is a member
-	inputText.reserve(io.InputQueueCharacters.Size);
-	for (int n = 0; n < io.InputQueueCharacters.Size; n++)
-	{
-		char c = static_cast<char>(io.InputQueueCharacters[n]);
-		if (c != 0 && c >= 32)
-		{
-			inputText += c;
-		}
-	}
-	io.InputQueueCharacters.clear(); // Clear input queue after processing
+    ImGuiIO& io = ImGui::GetIO();
 
-	if (inputText.empty())
-	{
-		return;
-	}
+    // 1) Read typed characters into UTF-8 without clearing ImGui's queue.
+    std::string inputText;
+    inputText.reserve(io.InputQueueCharacters.Size * 4);
+    for (int i = 0; i < io.InputQueueCharacters.Size; ++i) {
+        inputText += WcharToUtf8(io.InputQueueCharacters[i]);
+    }
 
-	// Only close LSP completion menu for specific characters
-	bool shouldCloseCompletion = false;
-	for (char c : inputText)
-	{
-		// Close for space, dot (for method chaining), and other special characters
-		if (c == ' ' || c == ' ' || c == '(' || c == ')' || c == '[' || c == ']' ||
-			c == '{' || c == '}' || c == ',' || c == ';' || c == ':' || c == '+' ||
-			c == '-' || c == '*' || c == '/' || c == '=' || c == '!' || c == '&' ||
-			c == '|' || c == '^' || c == '%' || c == '<' || c == '>')
-		{
-			shouldCloseCompletion = true;
-			break;
-		}
-	}
+    // Early out if nothing typed
+    if (inputText.empty())
+        return;
 
-	if (shouldCloseCompletion)
-	{
-		editor_state.block_input = false;
-	}
+    // 2) Decide whether to close completion UI based on typed chars.
+    //    NOTE: we do NOT include '.' or ':' here so they can trigger member lists.
+    const std::string closeChars = " ()[]{} ,;+-*/=!&|^%<>";
+    bool shouldCloseCompletion = false;
+    for (char c : inputText) {
+        if (closeChars.find(c) != std::string::npos) {
+            shouldCloseCompletion = true;
+            break;
+        }
+    }
+    if (shouldCloseCompletion)
+        editor_state.block_input = false;
 
-	std::set<int> caret_positions_for_insertion; // Stores unique, sorted
-												 // positions for new text
-	bool had_any_selections = false;
+    // ===========================
+    // Selection deletion (unchanged)
+    // ===========================
+    std::set<int> caret_positions_for_insertion;
+    bool had_any_selections = false;
+    std::vector<MultiSelectionRange> all_active_selections;
 
-	std::vector<MultiSelectionRange> all_active_selections;
+    if (editor_state.selection_start != editor_state.selection_end) {
+        had_any_selections = true;
+        all_active_selections.emplace_back(
+            std::min(editor_state.selection_start, editor_state.selection_end),
+            std::max(editor_state.selection_start, editor_state.selection_end));
+    }
+    for (const auto &ms_range : editor_state.multi_selections) {
+        if (ms_range.start_index != ms_range.end_index) {
+            had_any_selections = true;
+            all_active_selections.emplace_back(
+                std::min(ms_range.start_index, ms_range.end_index),
+                std::max(ms_range.start_index, ms_range.end_index));
+        }
+    }
 
-	if (editor_state.selection_start != editor_state.selection_end)
-	{
-		had_any_selections = true;
-		all_active_selections.emplace_back(
-			std::min(editor_state.selection_start, editor_state.selection_end),
-			std::max(editor_state.selection_start, editor_state.selection_end));
-	}
+    if (had_any_selections) {
+        std::sort(all_active_selections.begin(), all_active_selections.end(),
+                  [](const MultiSelectionRange &a, const MultiSelectionRange &b) {
+                      return a.start_index < b.start_index;
+                  });
 
-	for (const auto &ms_range : editor_state.multi_selections)
-	{
-		if (ms_range.start_index != ms_range.end_index)
-		{
-			had_any_selections = true;
-			all_active_selections.emplace_back(
-				std::min(ms_range.start_index, ms_range.end_index),
-				std::max(ms_range.start_index, ms_range.end_index));
-		}
-	}
+        std::vector<MultiSelectionRange> merged_selections;
+        if (!all_active_selections.empty()) {
+            merged_selections.push_back(all_active_selections[0]);
+            for (size_t i = 1; i < all_active_selections.size(); ++i) {
+                MultiSelectionRange &last_merged = merged_selections.back();
+                const MultiSelectionRange &current_sel = all_active_selections[i];
 
-	if (had_any_selections)
-	{
-		std::sort(all_active_selections.begin(),
-				  all_active_selections.end(),
-				  [](const MultiSelectionRange &a, const MultiSelectionRange &b) {
-					  return a.start_index < b.start_index;
-				  });
+                if (current_sel.start_index <= last_merged.end_index)
+                    last_merged.end_index = std::max(last_merged.end_index, current_sel.end_index);
+                else
+                    merged_selections.push_back(current_sel);
+            }
+        }
+        all_active_selections = merged_selections;
 
-		std::vector<MultiSelectionRange> merged_selections;
-		if (!all_active_selections.empty())
-		{
-			merged_selections.push_back(all_active_selections[0]);
-			for (size_t i = 1; i < all_active_selections.size(); ++i)
-			{
-				MultiSelectionRange &last_merged = merged_selections.back();
-				const MultiSelectionRange &current_sel = all_active_selections[i];
+        int total_chars_deleted_this_op = 0;
+        for (const auto &sel_to_delete : all_active_selections) {
+            int current_start = sel_to_delete.start_index - total_chars_deleted_this_op;
+            int current_end   = sel_to_delete.end_index   - total_chars_deleted_this_op;
 
-				if (current_sel.start_index <=
-					last_merged.end_index) // Overlap or adjacent
-				{
-					last_merged.end_index =
-						std::max(last_merged.end_index, current_sel.end_index);
-				} else
-				{
-					merged_selections.push_back(current_sel);
-				}
-			}
-		}
-		all_active_selections = merged_selections; // Use the merged list
+            current_start = std::max(0, std::min(current_start, (int)editor_state.fileContent.size()));
+            current_end   = std::max(current_start, std::min(current_end, (int)editor_state.fileContent.size()));
 
-		int total_chars_deleted_this_op = 0;
-		for (const auto &sel_to_delete : all_active_selections)
-		{
-			int current_start = sel_to_delete.start_index - total_chars_deleted_this_op;
-			int current_end = sel_to_delete.end_index - total_chars_deleted_this_op;
+            int length_to_delete = current_end - current_start;
+            if (length_to_delete > 0) {
+                editor_state.fileContent.erase(current_start, length_to_delete);
+                if ((size_t)current_start < editor_state.fileColors.size()) {
+                    editor_state.fileColors.erase(
+                        editor_state.fileColors.begin() + current_start,
+                        editor_state.fileColors.begin() + std::min(current_end, (int)editor_state.fileColors.size()));
+                } else if (!editor_state.fileColors.empty() && current_start == 0 &&
+                           length_to_delete == (int)editor_state.fileColors.size()) {
+                    editor_state.fileColors.clear();
+                }
+                total_chars_deleted_this_op += length_to_delete;
+            }
+            caret_positions_for_insertion.insert(current_start);
+        }
+    } else {
+        caret_positions_for_insertion.insert(editor_state.cursor_index);
+        for (int mc_idx : editor_state.multi_cursor_indices) {
+            int valid_mc_idx = std::max(0, std::min(mc_idx, (int)editor_state.fileContent.size()));
+            caret_positions_for_insertion.insert(valid_mc_idx);
+        }
+        if (editor_state.fileContent.empty() && caret_positions_for_insertion.empty())
+            caret_positions_for_insertion.insert(0);
+    }
 
-			current_start =
-				std::max(0,
-						 std::min(current_start,
-								  static_cast<int>(editor_state.fileContent.size())));
-			current_end = std::max(
-				current_start,
-				std::min(current_end, static_cast<int>(editor_state.fileContent.size())));
+    // ===========================
+    // Insert text at all carets (unchanged)
+    // ===========================
+    std::vector<int> final_new_cursor_positions;
+    int cumulative_insertion_offset = 0;
 
-			int length_to_delete = current_end - current_start;
+    for (int caret_pos : caret_positions_for_insertion) {
+        int actual_insert_pos = caret_pos + cumulative_insertion_offset;
+        actual_insert_pos = std::max(0, std::min(actual_insert_pos, (int)editor_state.fileContent.size()));
 
-			if (length_to_delete > 0)
-			{
-				editor_state.fileContent.erase(current_start, length_to_delete);
-				if (static_cast<size_t>(current_start) < editor_state.fileColors.size())
-				{
-					editor_state.fileColors.erase(
-						editor_state.fileColors.begin() + current_start,
-						editor_state.fileColors.begin() +
-							std::min(current_end,
-									 static_cast<int>(editor_state.fileColors.size())));
-				} else if (!editor_state.fileColors.empty() && current_start == 0 &&
-						   length_to_delete == editor_state.fileColors.size())
-				{
-					editor_state.fileColors.clear();
-				}
+        editor_state.fileContent.insert(actual_insert_pos, inputText);
 
-				total_chars_deleted_this_op += length_to_delete;
-			}
-			caret_positions_for_insertion.insert(
-				current_start); // Add the start of the (adjusted) deleted region
-		}
-	} else
-	{
-		caret_positions_for_insertion.insert(editor_state.cursor_index);
-		for (int mc_idx : editor_state.multi_cursor_indices)
-		{
-			int valid_mc_idx = std::max(
-				0, std::min(mc_idx, static_cast<int>(editor_state.fileContent.size())));
-			caret_positions_for_insertion.insert(valid_mc_idx);
-		}
-		if (editor_state.fileContent.empty() && caret_positions_for_insertion.empty())
-		{
-			caret_positions_for_insertion.insert(0);
-		}
-	}
+        // Theme color continuity
+        TreeSitter::updateThemeColors();
+        ImVec4 defaultColor = TreeSitter::cachedColors.text;
+        ImVec4 insertColor = defaultColor;
+        if (actual_insert_pos > 0 && actual_insert_pos <= (int)editor_state.fileColors.size())
+            insertColor = editor_state.fileColors[actual_insert_pos - 1];
 
-	std::vector<int> final_new_cursor_positions;
-	int cumulative_insertion_offset = 0;
+        if ((size_t)actual_insert_pos <= editor_state.fileColors.size())
+            editor_state.fileColors.insert(
+                editor_state.fileColors.begin() + actual_insert_pos, inputText.size(), insertColor);
+        else
+            for (size_t k = 0; k < inputText.size(); ++k) editor_state.fileColors.push_back(insertColor);
 
-	for (int caret_pos : caret_positions_for_insertion)
-	{
-		int actual_insert_pos = caret_pos + cumulative_insertion_offset;
+        final_new_cursor_positions.push_back(actual_insert_pos + (int)inputText.size());
+        cumulative_insertion_offset += (int)inputText.size();
+    }
 
-		actual_insert_pos =
-			std::max(0,
-					 std::min(actual_insert_pos,
-							  static_cast<int>(editor_state.fileContent.size())));
+    if (!final_new_cursor_positions.empty()) {
+        editor_state.cursor_index = final_new_cursor_positions[0];
+        editor_state.multi_cursor_indices.assign(
+            final_new_cursor_positions.begin() + 1, final_new_cursor_positions.end());
+    } else if (!caret_positions_for_insertion.empty()) {
+        auto it = caret_positions_for_insertion.begin();
+        editor_state.cursor_index = *it;
+        editor_state.multi_cursor_indices.clear();
+        ++it;
+        for (; it != caret_positions_for_insertion.end(); ++it)
+            editor_state.multi_cursor_indices.push_back(*it);
+    }
 
-		editor_state.fileContent.insert(actual_insert_pos, inputText);
+    // Reset selection state
+    editor_state.selection_start = editor_state.selection_end = editor_state.cursor_index;
+    editor_state.selection_active = false;
+    editor_state.multi_selections.clear();
 
-		// Get the proper default text color from the theme
-		TreeSitter::updateThemeColors();
-		ImVec4 defaultColor = TreeSitter::cachedColors.text;
+    editor_state.text_changed = true;
+    gEditor.updateLineStarts();
 
-		// Optionally extend the previous character's color for better visual
-		// continuity
-		ImVec4 insertColor = defaultColor;
-		if (actual_insert_pos > 0 && actual_insert_pos <= editor_state.fileColors.size())
-		{
-			// Use the color of the character before the insertion point
-			insertColor = editor_state.fileColors[actual_insert_pos - 1];
-		}
+    // ===========================
+    // Post-insert completion triggers (FIXED - only set flags, no immediate calls)
+    // ===========================
+    if (!inputText.empty()) {
+        char last = inputText.back();
 
-		if (static_cast<size_t>(actual_insert_pos) <= editor_state.fileColors.size())
-		{
-			editor_state.fileColors.insert(editor_state.fileColors.begin() +
-											   actual_insert_pos,
-										   inputText.size(),
-										   insertColor);
-		} else
-		{
-			for (size_t k = 0; k < inputText.size(); ++k)
-			{
-				editor_state.fileColors.push_back(insertColor);
-			}
-		}
+        // 3a) Immediate member/method list on '.' or ':'
+        if (last == '.' || last == ':') {
+            if (gLSPManager.isInitialized() &&
+                !gFileExplorer.currentFile.empty() &&
+                !editor_state.editor_content_lines.empty())
+            {
+                // SET FLAG INSTEAD OF DIRECT CALL to prevent infinite loop
+                editor_state.get_autocomplete = true;
+            }
+        }
+        else {
+            // 3b) Word-char typed → allow normal autocomplete path next frame
+            bool is_word_char = (last == '_') || (std::isalnum((unsigned char)last) != 0);
+            if (is_word_char && !shouldCloseCompletion) {
+                if (gSettings.getSettings()["lsp_autocomplete"])
+                    editor_state.get_autocomplete = true;
+            }
+        }
+    }
 
-		final_new_cursor_positions.push_back(actual_insert_pos + inputText.size());
-		cumulative_insertion_offset += inputText.size();
-	}
-
-	if (!final_new_cursor_positions.empty())
-	{
-		editor_state.cursor_index = final_new_cursor_positions[0]; // Primary cursor
-		editor_state.multi_cursor_indices.assign(				   // Multi-cursors
-			final_new_cursor_positions.begin() + 1,
-			final_new_cursor_positions.end());
-	} else if (!caret_positions_for_insertion.empty())
-	{
-		auto it = caret_positions_for_insertion.begin();
-		editor_state.cursor_index = *it;
-		editor_state.multi_cursor_indices.clear();
-		++it;
-		for (; it != caret_positions_for_insertion.end(); ++it)
-		{
-			editor_state.multi_cursor_indices.push_back(*it);
-		}
-	} else
-	{
-	}
-
-	// Reset selection state
-	editor_state.selection_start = editor_state.selection_end = editor_state.cursor_index;
-	editor_state.selection_active = false;
-	editor_state.multi_selections
-		.clear(); // Important: clear multi-selections after typing
-
-	editor_state.text_changed = true;
-	gEditor.updateLineStarts();
-
-	// After processing the input, trigger LSP completion only if there was no space
-	if (!inputText.empty() && !shouldCloseCompletion)
-	{
-		if (gSettings.getSettings()["lsp_autocomplete"])
-		{
-			editor_state.get_autocomplete = true;
-		}
-		// Trigger AI completion if enabled
-		if (gSettings.getSettings()["ai_autocomplete"])
-		{
-			gAITab.cancel_request();
-			gAITab.tab_complete();
-		}
-	}
+    // Optional: trigger AI tab only if you want
+    if (!inputText.empty() && !shouldCloseCompletion && gSettings.getSettings()["ai_autocomplete"]) {
+        gAITab.cancel_request();
+        gAITab.tab_complete();
+    }
 }
 
 std::string CalculateIndentForPosition(const std::string &content,
@@ -989,7 +972,7 @@ void EditorKeyboard::handleTextInput()
 		// Add undo state with change range
 		gFileExplorer.addUndoState();
 		gFileExplorer._unsavedChanges = true;
-		gFileExplorer.saveCurrentFile();
+		// gFileExplorer.saveCurrentFile();
 
 		// Trigger immediate git update when text changes
 		gEditorGit.triggerImmediateUpdate();
@@ -1047,221 +1030,257 @@ void EditorKeyboard::processTextEditorInput()
 
 void EditorKeyboard::handleEditorKeyboardInput()
 {
-	bool ctrl_pressed = ImGui::GetIO().KeyCtrl;
-	bool shift_pressed = ImGui::GetIO().KeyShift;
+    bool ctrl_pressed = ImGui::GetIO().KeyCtrl;
+    bool shift_pressed = ImGui::GetIO().KeyShift;
 
-	// block input if searching for file...
-	if (gFileFinder.showFFWindow || gLineJump.showLineJumpWindow ||
-		gLSPAutocomplete.blockTab)
-	{
-		gLSPAutocomplete.blockTab = false;
-		return;
-	}
+    // block input if searching for file...
+    if (gFileFinder.showFFWindow || gLineJump.showLineJumpWindow ||
+        gLSPAutocomplete.blockTab)
+    {
+        gLSPAutocomplete.blockTab = false;
+        return;
+    }
 
-	// Handle AI completion first
-	if (gAITab.has_ghost_text)
-	{
-		if (ImGui::IsKeyPressed(ImGuiKey_Tab))
-		{
-			gAITab.accept_completion();
-			return;
-		}
-		// Dismiss completion on any character input or arrow key
-		if (ImGui::GetIO().InputQueueCharacters.Size > 0 ||
-			ImGui::IsKeyPressed(ImGuiKey_LeftArrow) ||
-			ImGui::IsKeyPressed(ImGuiKey_RightArrow) ||
-			ImGui::IsKeyPressed(ImGuiKey_UpArrow) ||
-			ImGui::IsKeyPressed(ImGuiKey_DownArrow) ||
-			ImGui::IsKeyPressed(ImGuiKey_Delete) ||
-			ImGui::IsKeyPressed(ImGuiKey_Backspace) ||
-			ImGui::IsKeyPressed(ImGuiKey_Enter) || ImGui::IsKeyPressed(ImGuiKey_Escape) ||
-			(ImGui::GetIO().KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_X)))
-		{
-			gAITab.dismiss_completion();
-		}
-	}
-	// Cancel any ongoing requests when arrow keys are pressed
-	if (ImGui::IsKeyPressed(ImGuiKey_LeftArrow) ||
-		ImGui::IsKeyPressed(ImGuiKey_RightArrow) ||
-		ImGui::IsKeyPressed(ImGuiKey_UpArrow) ||
-		ImGui::IsKeyPressed(ImGuiKey_DownArrow) || ImGui::IsKeyPressed(ImGuiKey_Delete) ||
-		ImGui::IsKeyPressed(ImGuiKey_Backspace) || ImGui::IsKeyPressed(ImGuiKey_Enter) ||
-		ImGui::IsKeyPressed(ImGuiKey_Escape))
-	{
-		gAITab.cancel_request();
-	}
+    // Handle AI completion first
+    if (gAITab.has_ghost_text)
+    {
+        if (ImGui::IsKeyPressed(ImGuiKey_Tab))
+        {
+            gAITab.accept_completion();
+            return;
+        }
+        // Dismiss completion on any character input or arrow key
+        if (ImGui::GetIO().InputQueueCharacters.Size > 0 ||
+            ImGui::IsKeyPressed(ImGuiKey_LeftArrow) ||
+            ImGui::IsKeyPressed(ImGuiKey_RightArrow) ||
+            ImGui::IsKeyPressed(ImGuiKey_UpArrow) ||
+            ImGui::IsKeyPressed(ImGuiKey_DownArrow) ||
+            ImGui::IsKeyPressed(ImGuiKey_Delete) ||
+            ImGui::IsKeyPressed(ImGuiKey_Backspace) ||
+            ImGui::IsKeyPressed(ImGuiKey_Enter) || ImGui::IsKeyPressed(ImGuiKey_Escape) ||
+            (ImGui::GetIO().KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_X)))
+        {
+            gAITab.dismiss_completion();
+        }
+    }
+    // Cancel any ongoing requests when arrow keys are pressed
+    if (ImGui::IsKeyPressed(ImGuiKey_LeftArrow) ||
+        ImGui::IsKeyPressed(ImGuiKey_RightArrow) ||
+        ImGui::IsKeyPressed(ImGuiKey_UpArrow) ||
+        ImGui::IsKeyPressed(ImGuiKey_DownArrow) || ImGui::IsKeyPressed(ImGuiKey_Delete) ||
+        ImGui::IsKeyPressed(ImGuiKey_Backspace) || ImGui::IsKeyPressed(ImGuiKey_Enter) ||
+        ImGui::IsKeyPressed(ImGuiKey_Escape))
+    {
+        gAITab.cancel_request();
+    }
 
-	// Process bookmarks first
-	if (ImGui::GetIO().KeyAlt && !ImGui::GetIO().KeyCtrl)
-	{
-		if (ImGui::IsKeyPressed(ImGuiKey_UpArrow))
-		{
-			gEditorCursor.swapLines(-1);
-			return; // Prevent other Alt+Up handling
-		}
-		if (ImGui::IsKeyPressed(ImGuiKey_DownArrow))
-		{
-			gEditorCursor.swapLines(1);
-			return; // Prevent other Alt+Down handling
-		}
-		gEditorCursor.processWordMovement(editor_state.fileContent,
-										  editor_state.ensure_cursor_visible);
-	}
-	if (ImGui::IsKeyPressed(ImGuiKey_Escape))
-	{
-		editor_state.multi_selections.clear();
-		editor_state.multi_cursor_indices.clear();
-		editor_state.selection_active = false;
-		editor_state.selection_end = 0;
-		editor_state.selection_start = 0;
-	}
-	// Process bookmarks first
-	if (ImGui::GetIO().KeyAlt && ImGui::GetIO().KeyCtrl)
-	{
-		if (ImGui::IsKeyPressed(ImGuiKey_UpArrow))
-		{
-			gEditorCursor.spawnCursorAbove();
-			return;
-		}
-		if (ImGui::IsKeyPressed(ImGuiKey_DownArrow))
-		{
-			gEditorCursor.spawnCursorBelow();
-			return;
-		}
-		gEditorCursor.processWordMovement(editor_state.fileContent,
-										  editor_state.ensure_cursor_visible);
-	}
+    // Process bookmarks first
+    if (ImGui::GetIO().KeyAlt && !ImGui::GetIO().KeyCtrl)
+    {
+        if (ImGui::IsKeyPressed(ImGuiKey_UpArrow))
+        {
+            gEditorCursor.swapLines(-1);
+            return; // Prevent other Alt+Up handling
+        }
+        if (ImGui::IsKeyPressed(ImGuiKey_DownArrow))
+        {
+            gEditorCursor.swapLines(1);
+            return; // Prevent other Alt+Down handling
+        }
+        gEditorCursor.processWordMovement(editor_state.fileContent,
+                                          editor_state.ensure_cursor_visible);
+    }
+    if (ImGui::IsKeyPressed(ImGuiKey_Escape))
+    {
+        editor_state.multi_selections.clear();
+        editor_state.multi_cursor_indices.clear();
+        editor_state.selection_active = false;
+        editor_state.selection_end = 0;
+        editor_state.selection_start = 0;
+    }
+    // Process bookmarks first
+    if (ImGui::GetIO().KeyAlt && ImGui::GetIO().KeyCtrl)
+    {
+        if (ImGui::IsKeyPressed(ImGuiKey_UpArrow))
+        {
+            gEditorCursor.spawnCursorAbove();
+            return;
+        }
+        if (ImGui::IsKeyPressed(ImGuiKey_DownArrow))
+        {
+            gEditorCursor.spawnCursorBelow();
+            return;
+        }
+        gEditorCursor.processWordMovement(editor_state.fileContent,
+                                          editor_state.ensure_cursor_visible);
+    }
 
-	if (ImGui::IsWindowFocused() && !editor_state.block_input)
-	{
-		// Process Shift+Tab for indentation removal. If handled, exit early.
-		if (gEditorIndentation.processIndentRemoval())
-			return;
-		gEditorIndentation.handleTabKey();
+    if (ImGui::IsWindowFocused() && !editor_state.block_input)
+    {
+        // Process Shift+Tab for indentation removal. If handled, exit early.
+        if (gEditorIndentation.processIndentRemoval())
+            return;
+        gEditorIndentation.handleTabKey();
 
-		if (ctrl_pressed)
-		{
-			// Handle Ctrl+R for reloading files with external changes
-			if (ImGui::IsKeyPressed(ImGuiKey_R, false))
-			{
-				gFileExplorer.reloadCurrentFile();
-			}
+        if (ctrl_pressed)
+        {
+            // Handle Ctrl+R for reloading files with external changes
+            if (ImGui::IsKeyPressed(ImGuiKey_R, false))
+            {
+                gFileExplorer.reloadCurrentFile();
+            }
 
-			ImGuiKey ai_completions = gKeybinds.getActionKey("ai_completion");
+            ImGuiKey ai_completions = gKeybinds.getActionKey("ai_completion");
 
-			if (ImGui::IsKeyPressed(ai_completions, false))
-			{
-				gAITab.tab_complete();
-			}
-			processFontSizeAdjustment();
-			processSelectAll();
-			gBookmarks.handleBookmarkInput(gFileExplorer);
-			gEditorCursor.processCursorJump(editor_state.fileContent,
-											editor_state.ensure_cursor_visible);
-			ImGuiKey lsp_symbol_info = gKeybinds.getActionKey("lsp_symbol_info");
+            if (ImGui::IsKeyPressed(ai_completions, false))
+            {
+                gAITab.tab_complete();
+            }
+            processFontSizeAdjustment();
+            processSelectAll();
+            gBookmarks.handleBookmarkInput(gFileExplorer);
+            gEditorCursor.processCursorJump(editor_state.fileContent,
+                                            editor_state.ensure_cursor_visible);
+            ImGuiKey lsp_symbol_info = gKeybinds.getActionKey("lsp_symbol_info");
 
-			if (ImGui::IsKeyPressed(lsp_symbol_info, false))
-			{
-				gLSPSymbolInfo.fetchSymbolInfo(gFileExplorer.currentFile);
-			}
-			ImGuiKey lsp_find_ref = gKeybinds.getActionKey("lsp_find_ref");
+            if (ImGui::IsKeyPressed(lsp_symbol_info, false))
+            {
+                gLSPSymbolInfo.fetchSymbolInfo(gFileExplorer.currentFile);
+            }
+            ImGuiKey lsp_find_ref = gKeybinds.getActionKey("lsp_find_ref");
 
-			if (ImGui::IsKeyPressed(lsp_find_ref, false))
-			{
-				int current_line = gEditor.getLineFromPos(editor_state.cursor_index);
-				// Get character offset in current line (same as above)
-				int line_start = 0; // Default to 0
-				if (current_line >= 0 &&
-					current_line < editor_state.editor_content_lines.size())
-				{
-					line_start = editor_state.editor_content_lines[current_line];
-				}
-				int char_offset = editor_state.cursor_index - line_start;
-				char_offset = std::max(0, char_offset); // Ensure non-negative
+            if (ImGui::IsKeyPressed(lsp_find_ref, false))
+            {
+                int current_line = gEditor.getLineFromPos(editor_state.cursor_index);
+                // Get character offset in current line (same as above)
+                int line_start = 0; // Default to 0
+                if (current_line >= 0 &&
+                    current_line < editor_state.editor_content_lines.size())
+                {
+                    line_start = editor_state.editor_content_lines[current_line];
+                }
+                int char_offset = editor_state.cursor_index - line_start;
+                char_offset = std::max(0, char_offset); // Ensure non-negative
 
-				// Call LSP find references using the new global instance
-				gLSPGotoRef.findReferences(gFileExplorer.currentFile,
-										   current_line,
-										   char_offset);
-			}
-			ImGuiKey lsp_find_def = gKeybinds.getActionKey("lsp_find_def");
+                // Call LSP find references using the new global instance
+                gLSPGotoRef.findReferences(gFileExplorer.currentFile,
+                                           current_line,
+                                           char_offset);
+            }
+            ImGuiKey lsp_find_def = gKeybinds.getActionKey("lsp_find_def");
 
-			if (ImGui::IsKeyPressed(lsp_find_def, false))
-			{
-				// Get current line number from editor_state
-				int current_line = gEditor.getLineFromPos(editor_state.cursor_index);
+            if (ImGui::IsKeyPressed(lsp_find_def, false))
+            {
+                // Get current line number from editor_state
+                int current_line = gEditor.getLineFromPos(editor_state.cursor_index);
 
-				// Get character offset in current line
-				int line_start = editor_state.editor_content_lines[current_line];
-				int char_offset = editor_state.cursor_index - line_start;
+                // Get character offset in current line
+                int line_start = editor_state.editor_content_lines[current_line];
+                int char_offset = editor_state.cursor_index - line_start;
 
-				// Call LSP goto definition
-				gLSPGotoDef.gotoDefinition(gFileExplorer.currentFile,
-										   current_line,
-										   char_offset);
-			}
-			ImGuiKey lsp_completion = gKeybinds.getActionKey("lsp_completion");
+                // Call LSP goto definition
+                gLSPGotoDef.gotoDefinition(gFileExplorer.currentFile,
+                                           current_line,
+                                           char_offset);
+            }
+            ImGuiKey lsp_completion = gKeybinds.getActionKey("lsp_completion");
 
-			if (ImGui::IsKeyPressed(lsp_completion, false))
-			{
-				editor_state.get_autocomplete = false;
-				// Get current line number from editor_state
-				int current_line = gEditor.getLineFromPos(editor_state.cursor_index);
+            if (ImGui::IsKeyPressed(lsp_completion, false))
+            {
+                editor_state.get_autocomplete = false;
+                // Get current line number from editor_state
+                int current_line = gEditor.getLineFromPos(editor_state.cursor_index);
 
-				// Get character offset in current line
-				int line_start = editor_state.editor_content_lines[current_line];
-				int char_offset = editor_state.cursor_index - line_start;
+                // Get character offset in current line
+                int line_start = editor_state.editor_content_lines[current_line];
+                int char_offset = editor_state.cursor_index - line_start;
 
-				gLSPAutocomplete.requestCompletion(gFileExplorer.currentFile,
-												   current_line,
-												   char_offset);
-			}
-		}
-	}
-	handleTextInput();
+                std::cout << "[DEBUG] requestCompletion @ " << current_line << ":" << char_offset
+                << " file=" << gFileExplorer.currentFile << "\n";
+                gLSPAutocomplete.requestCompletion(gFileExplorer.currentFile,
+                                                   current_line,
+                                                   char_offset);
+            }
+        }
+    }
+    handleTextInput();
 
-	if (editor_state.get_autocomplete)
-	{
-		editor_state.get_autocomplete = false;
-		// Get current line number from editor_state
-		int current_line = gEditor.getLineFromPos(editor_state.cursor_index);
+    // // After handleTextInput()
+    // if (ImGui::GetIO().InputQueueCharacters.Size > 0)
+    // {
+    //     ImWchar c = ImGui::GetIO().InputQueueCharacters.back();
 
-		// Get character offset in current line
-		int line_start = editor_state.editor_content_lines[current_line];
-		int char_offset = editor_state.cursor_index - line_start;
+    //     if ((c >= 'a' && c <= 'z') ||
+    //         (c >= 'A' && c <= 'Z') ||
+    //         (c >= '0' && c <= '9') ||
+    //         c == '_')
+    //     {
+    //         static auto lastCompletion = std::chrono::steady_clock::now();
+    //         auto now = std::chrono::steady_clock::now();
 
-		gLSPAutocomplete.requestCompletion(gFileExplorer.currentFile,
-										   current_line,
-										   char_offset);
-	}
+    //         if (std::chrono::duration_cast<std::chrono::milliseconds>(now - lastCompletion).count() > 120)
+    //         {
+    //             int current_line = gEditor.getLineFromPos(editor_state.cursor_index);
+    //             int line_start   = editor_state.editor_content_lines[current_line];
+    //             int char_offset  = editor_state.cursor_index - line_start;
 
-	// Handle arrow key visibility
-	handleArrowKeyVisibility();
+    //             std::cout << "[DEBUG] requestCompletion @ " << current_line << ":" << char_offset
+    //             << " file=" << gFileExplorer.currentFile << "\n";
+    //             gLSPAutocomplete.requestCompletion(
+    //                 gFileExplorer.currentFile,
+    //                 current_line,
+    //                 char_offset
+    //             );
+    //             lastCompletion = now;
+    //         }
+    //     }
+    // }
 
-	// Pass the correct variables to handleCursorMovement
-	float window_height = ImGui::GetWindowHeight();
-	float window_width = ImGui::GetWindowWidth();
-	gEditorCursor.handleCursorMovement(editor_state.fileContent,
-									   editor_state.text_pos,
-									   editor_state.line_height,
-									   window_height,
-									   window_width);
 
-	// Always process clipboard shortcuts and undo/redo, even when input is blocked
-	ImGuiIO &io = ImGui::GetIO();
-	if (io.KeyCtrl || io.KeySuper)
-	{
-		// Close autocomplete when using keyboard shortcuts
-		gLSPAutocomplete.showCompletions = false;
-		gLSPAutocomplete.wasShowingLastFrame = false;
-		editor_state.block_input = false;
+    if (editor_state.get_autocomplete)
+    {
+        editor_state.get_autocomplete = false;
+        // Get current line number from editor_state
+        int current_line = gEditor.getLineFromPos(editor_state.cursor_index);
 
-		gEditorCopyPaste.processClipboardShortcuts();
-		gEditorKeyboard.processUndoRedo();
-	}
+        // Get character offset in current line
+        int line_start = editor_state.editor_content_lines[current_line];
+        int char_offset = editor_state.cursor_index - line_start;
 
-	// Update cursor visibility if text has changed
-	updateCursorVisibilityOnTextChange();
+        std::cout << "[DEBUG] requestCompletion @ " << current_line << ":" << char_offset
+                << " file=" << gFileExplorer.currentFile << "\n";
+        gLSPAutocomplete.requestCompletion(gFileExplorer.currentFile,
+                                           current_line,
+                                           char_offset);
+    }
+
+    // Handle arrow key visibility
+    handleArrowKeyVisibility();
+
+    // Pass the correct variables to handleCursorMovement
+    float window_height = ImGui::GetWindowHeight();
+    float window_width = ImGui::GetWindowWidth();
+    gEditorCursor.handleCursorMovement(editor_state.fileContent,
+                                       editor_state.text_pos,
+                                       editor_state.line_height,
+                                       window_height,
+                                       window_width);
+
+    // Always process clipboard shortcuts and undo/redo, even when input is blocked
+    ImGuiIO &io = ImGui::GetIO();
+    if (io.KeyCtrl || io.KeySuper)
+    {
+        // Close autocomplete when using keyboard shortcuts
+        gLSPAutocomplete.showCompletions = false;
+        gLSPAutocomplete.wasShowingLastFrame = false;
+        editor_state.block_input = false;
+
+        gEditorCopyPaste.processClipboardShortcuts();
+        gEditorKeyboard.processUndoRedo();
+    }
+
+    // Update cursor visibility if text has changed
+    updateCursorVisibilityOnTextChange();
 }
 
 void EditorKeyboard::handleArrowKeyVisibility()
