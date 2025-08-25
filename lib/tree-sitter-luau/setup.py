@@ -36,8 +36,7 @@ setup(
             sources=[
                 "bindings/python/tree_sitter_luau/binding.c",
                 "src/parser.c",
-                "src/scanner.c"
-                # NOTE: if your language uses an external scanner, add it here.
+                "src/scanner.c",
             ],
             extra_compile_args=[
                 "-std=c11",

@@ -1,19 +1,40 @@
+# Rust artifacts
+target/
+
+# Node artifacts
+build/
+prebuilds/
 node_modules/
-*.swp
-*.exp
-*.obj
-*.lib
-*.exe
-/package-lock.json
-/build
-/target
-/outfile.txt
-queries/
-/*.luau
-local/
-aftman.toml
-Cargo.lock
+
+# Swift artifacts
+.build/
+
+# Go artifacts
+_obj/
+
+# Python artifacts
+.venv/
+dist/
+*.egg-info
+*.whl
+
+# C artifacts
+*.a
+*.so
+*.so.*
+*.dylib
+*.dll
+*.pc
+
+# Example dirs
+/examples/*/
+
+# Grammar volatiles
 *.wasm
-*.wat
-compile_flags.txt
-pnpm-lock.yaml
+*.obj
+*.o
+
+# Archives
+*.tar.gz
+*.tgz
+*.zip

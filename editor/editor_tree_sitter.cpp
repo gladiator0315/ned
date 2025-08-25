@@ -294,64 +294,42 @@ std::string TreeSitter::getResourcePath(const std::string &relativePath)
 }
 
 TSQuery *TreeSitter::loadQueryFromCacheOrFile(TSLanguage *lang,
-                                              const std::string &query_path)
+											  const std::string &query_path)
 {
-    std::string full_path = getResourcePath(query_path);
-    
-    // DEBUG: Print the path and check if file exists
-    std::cout << "[DEBUG] Loading query from: " << full_path << std::endl;
-    
-    std::ifstream test_file(full_path);
-    if (!test_file.is_open()) {
-        std::cerr << "[ERROR] File does not exist or cannot be opened: " << full_path << std::endl;
-    } else {
-        test_file.close();
-    }
+	std::string full_path = getResourcePath(query_path);
 
-    auto cacheIt = queryCache.find(full_path);
-    if (cacheIt != queryCache.end())
-    {
-        return cacheIt->second;
-    }
+	// Use full_path as the cache key consistently
+	auto cacheIt = queryCache.find(full_path);
+	if (cacheIt != queryCache.end())
+	{
+		return cacheIt->second;
+	}
 
-    std::ifstream file(full_path);
-    if (!file.is_open())
-    {
-        std::cerr << "Failed to open query file: " << full_path << "\n";
-        return nullptr;
-    }
-    
-    // DEBUG: Print file size and content
-    file.seekg(0, std::ios::end);
-    size_t file_size = file.tellg();
-    file.seekg(0, std::ios::beg);
-    std::cout << "[DEBUG] File size: " << file_size << " bytes" << std::endl;
-    
-    std::string query_src((std::istreambuf_iterator<char>(file)),
-                          std::istreambuf_iterator<char>());
-    file.close();
-    
-    // DEBUG: Print first 150 characters of the query
-    std::cout << "[DEBUG] Query content (first 150 chars): " 
-              << query_src.substr(0, 150) << std::endl;
+	std::ifstream file(full_path);
+	if (!file.is_open())
+	{
+		std::cerr << "Failed to open query file: " << full_path << "\n";
+		return nullptr;
+	}
+	std::string query_src((std::istreambuf_iterator<char>(file)),
+						  std::istreambuf_iterator<char>());
+	file.close();
 
-    uint32_t error_offset;
-    TSQueryError error_type;
-    TSQuery *query = ts_query_new(
-        lang, query_src.c_str(), query_src.size(), &error_offset, &error_type);
+	uint32_t error_offset;
+	TSQueryError error_type;
+	TSQuery *query = ts_query_new(
+		lang, query_src.c_str(), query_src.size(), &error_offset, &error_type);
 
-    if (!query)
-    {
-        std::cerr << "Query error (" << error_type << ") at offset " << error_offset
-                  << "\n";
-        std::cerr << "Context around error: " 
-                  << query_src.substr(std::max(0, (int)error_offset - 20), 40)
-                  << std::endl;
-        return nullptr;
-    }
+	if (!query)
+	{
+		std::cerr << "Query error (" << error_type << ") at offset " << error_offset
+				  << "\n";
+		return nullptr;
+	}
 
-    queryCache[full_path] = query;
-    return query;
+	// Store using full_path as key
+	queryCache[full_path] = query;
+	return query;
 }
 
 void TreeSitter::clearQueryCache()

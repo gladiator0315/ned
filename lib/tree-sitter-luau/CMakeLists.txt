@@ -1,12 +1,13 @@
 cmake_minimum_required(VERSION 3.13)
 
 project(tree-sitter-luau
-        VERSION "0.0.1"
+        VERSION "1.2.0"
         DESCRIPTION "Luau grammar for tree-sitter"
-        HOMEPAGE_URL "https://github.com/tree-sitter/tree-sitter-luau"
+        HOMEPAGE_URL "https://github.com/tree-sitter-grammars/tree-sitter-luau"
         LANGUAGES C)
 
 option(BUILD_SHARED_LIBS "Build using shared libraries" ON)
+option(TREE_SITTER_REUSE_ALLOCATOR "Reuse the library allocator" OFF)
 
 set(TREE_SITTER_ABI_VERSION 14 CACHE STRING "Tree-sitter ABI version")
 if(NOT ${TREE_SITTER_ABI_VERSION} MATCHES "^[0-9]+$")
@@ -24,16 +25,21 @@ add_custom_command(OUTPUT "${CMAKE_CURRENT_SOURCE_DIR}/src/parser.c"
                    COMMENT "Generating parser.c")
 
 add_library(tree-sitter-luau src/parser.c)
-if(EXISTS src/scanner.c)
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/scanner.c)
   target_sources(tree-sitter-luau PRIVATE src/scanner.c)
 endif()
 target_include_directories(tree-sitter-luau PRIVATE src)
+
+target_compile_definitions(tree-sitter-luau PRIVATE
+                           $<$<BOOL:${TREE_SITTER_REUSE_ALLOCATOR}>:TREE_SITTER_REUSE_ALLOCATOR>
+                           $<$<CONFIG:Debug>:TREE_SITTER_DEBUG>)
 
 set_target_properties(tree-sitter-luau
                       PROPERTIES
                       C_STANDARD 11
                       POSITION_INDEPENDENT_CODE ON
-                      SOVERSION "${TREE_SITTER_ABI_VERSION}.${PROJECT_VERSION_MAJOR}")
+                      SOVERSION "${TREE_SITTER_ABI_VERSION}.${PROJECT_VERSION_MAJOR}"
+                      DEFINE_SYMBOL "")
 
 configure_file(bindings/c/tree-sitter-luau.pc.in
                "${CMAKE_CURRENT_BINARY_DIR}/tree-sitter-luau.pc" @ONLY)
@@ -47,8 +53,6 @@ install(FILES "${CMAKE_CURRENT_BINARY_DIR}/tree-sitter-luau.pc"
 install(TARGETS tree-sitter-luau
         LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}")
 
-add_custom_target(test "${TREE_SITTER_CLI}" test
+add_custom_target(ts-test "${TREE_SITTER_CLI}" test
                   WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
                   COMMENT "tree-sitter test")
-
-# vim:ft=cmake:
